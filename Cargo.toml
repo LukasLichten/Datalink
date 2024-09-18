@@ -1,0 +1,4 @@
+[workspace]
+members = ["Datalink","datalink-shm-bridge"]
+default-members = ["Datalink"]
+resolver = "2"
