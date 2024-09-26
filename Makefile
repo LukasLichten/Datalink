@@ -13,6 +13,9 @@ debug-build:
 clean: 
 	cargo clean
 
+test-lib:
+	cd datalink-memmap-config && cargo test --all-features
+
 help:
 	@echo "Builds and test the shm-bridge"
 	@echo "make:             Builds"

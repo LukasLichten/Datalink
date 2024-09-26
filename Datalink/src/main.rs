@@ -1,7 +1,6 @@
 use std::{fs, os::unix::process::CommandExt, path::PathBuf};
 
 fn main() {
-    println!("Launching with Datalink...");
     let mut args = std::env::args();
 
     let exe = if let Some(exe) = handle_instructions(&mut args) {
@@ -9,6 +8,7 @@ fn main() {
     } else {
         return;
     };
+    println!("Launching with Datalink...");
 
     // for arg in std::env::args() {
     //     println!("{arg}");
@@ -64,7 +64,7 @@ fn main() {
 
             let res = run.wait();
 
-            // Todo dbus start
+            // Todo dbus stop
 
             match res { 
                 Err(e) => panic!("Exiting Datalink due to game crash:\n{e}"),
