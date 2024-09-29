@@ -1,4 +1,7 @@
 use datalink_memmap_config::GameMemoryMapsConfig;
+use mmap::FileMapping;
+
+mod mmap;
 
 fn main() {
     // Currently a shell is spawned for this tool being launched
@@ -21,46 +24,103 @@ fn main() {
         cmd.arg(item);
     }
 
-    let (game_id, maps) = if let Some(config) = datalink_memmap_config::read_config() { // The LSP pretends the function does not exist
-        let config: GameMemoryMapsConfig = config; // We can at least code with this still
+    
+    let (game_id, maps) = match datalink_memmap_config::read_config() { // The LSP pretends the function does not exist
+        Ok(Some(config)) => {
+            let config: GameMemoryMapsConfig = config; // We can at least code with this still
 
-        let game_id = if let Some(alter) = config.game_id {
-            alter
-        } else {
-            game_id
-        };
-        
-        println!("{} starting...", game_id.as_str());
+            let game_id = if let Some(alter) = config.game_id {
+                alter
+            } else {
+                game_id
+            };
 
+            println!("{} starting...", game_id.as_str());
 
+            let tmpfs = match mmap::get_tmpfs_mountpoint() {
+                Some(p) => p,
+                None => error_exit("Unable to find /dev/shm through the wine prefix")
+            };
+            let mut maps = Vec::<FileMapping>::with_capacity(config.maps.len());
 
+            for item in config.maps {
+                match mmap::create_file_mapping(tmpfs.clone(), item.name.as_str(), item.size) {
+                    Ok(map) => {
+                        maps.push(map);
+                        println!("Created MemoryMap {} with size {} successfully", item.name, item.size);
+                    },
+                    Err(e) => {
+                        drop(maps); // Cleanup already created maps
+                        error_exit(format!("Failed to create memory map {}: {}", item.name, e).as_str())
+                    }
+                }
+            }
+            
 
-        (game_id, ())
-    } else {
-        println!("{} starting...", game_id.as_str());
+            (game_id, maps)
+        },
+        Ok(None) => {
+            println!("{} starting...", game_id.as_str());
 
-        println!("No Config File Found!");
-        println!("No Memory Maps will be deployed, dbus will still be notified!");
-        (game_id, ())
+            println!("No Config File Found!");
+            println!("No Memory Maps will be deployed, dbus will still be notified!");
+
+            (game_id, Vec::<FileMapping>::new())
+        },
+        Err(e) => {
+            println!("{} starting...", game_id.as_str());
+
+            // Should we crash on this?
+
+            println!("Failed to read Config File:");
+            println!("{e}");
+            println!("No Memory Maps will be deployed, dbus will still be notified!");
+
+            (game_id, Vec::<FileMapping>::new())
+        }
     };
 
-    // TODO deploy memory maps
     // TODO send dbus notification
 
-    println!("Do Not Close This Window!");
+    println!("DO NOT CLOSE THIS WINDOW!");
 
-    let _ = cmd.spawn().unwrap().wait();
+    let mut pro = match cmd.spawn() {
+        Ok(pro) => pro,
+        Err(e) => error_exit(format!("Failure to launch game: {e}").as_str())
+    };
+
+    
+    // ctrlc::set_handler(|| {
+    //     
+    //     println!("Termination requested");
+    //
+    // }).expect("Interrupt handler should never fail to be created");
+    let _ = pro.wait();
+    
 
     // TODO send dbus notification about shutdown
-    // TODO and we need to cleanup what we launched
+
+    drop(maps); // Maps and their files are cleaned up on drop
+    println!("Datalink Bridge shutdown (window should close now)");
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
-    println!("Datalink Bridge shutdown (window should close now)");
 }
 
 fn convert_linux_path_to_wine(path: Option<String>) -> Option<String> {
     let p = path?.replace('/', "\\");
+    // TODO: Is alternative mount point for linux root a thing? Or does wine always have it on Z?
     let complete = "Z:".to_string() + &p;
 
     Some(complete)
 }
+
+fn error_exit(msg: &str) -> ! {
+    println!("Fatal error occured: {msg}");
+    println!("Exiting...");
+    
+    // User read time
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    std::process::exit(1)
+}
+

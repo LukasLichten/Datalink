@@ -37,6 +37,14 @@ impl GameMemoryMapsConfig {
         }
     }
 
+    pub fn new(maps: Vec<MemMapConfig>) -> Self {
+        Self { game_id: None, maps }
+    }
+
+    pub fn new_with_name_override(game_id: String, maps: Vec<MemMapConfig>) -> Self {
+        Self { game_id: Some(game_id), maps }
+    }
+
     /// Reads (if present) the config at the prefix,
     /// if compatible with the new_config passed in they will be merged and written into the file (with the
     /// result being returned within the Ok()).
@@ -97,13 +105,20 @@ impl MemMapConfig {
 /// Aquires the config (for this prefix) from
 /// C:\Users\[current]\AppData\Roaming\Datalink\config.json
 #[cfg(target_os = "windows")]
-pub fn read_config() -> Option<GameMemoryMapsConfig> {
-    let mut path = dirs::config_dir()?;
+pub fn read_config() -> Result<Option<GameMemoryMapsConfig>, String> {
+    let mut path = match dirs::config_dir() {
+        Some(p) => p,
+        None => return Ok(None)
+    };
     path.push("Datalink");
     path.push("config.json");
 
-    let conf = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&conf).ok()
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let conf = fs::read_to_string(path).map_err(|e| format!("{e}"))?;
+    Ok(Some(serde_json::from_str(&conf).map_err(|e| format!("{e}"))?))
 }
 
 /// Finds the folder within the prefix
