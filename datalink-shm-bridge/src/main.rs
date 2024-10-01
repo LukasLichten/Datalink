@@ -13,7 +13,7 @@ fn main() {
 
     let mut args = std::env::args();
     
-    let _callback = convert_linux_path_to_wine(args.nth(1)).unwrap();
+    let callback = convert_linux_path_to_wine(args.nth(1)).unwrap();
     let game_id = args.next().unwrap();
 
     // Generating game calle
@@ -79,29 +79,32 @@ fn main() {
             (game_id, Vec::<FileMapping>::new())
         }
     };
+    
+    // Pre-Game dbus message
+    send_dbus(callback.as_str(), "--set-playing", game_id.as_str());
 
-    // TODO send dbus notification
 
+    // Launching the game
     println!("DO NOT CLOSE THIS WINDOW!");
-
     let mut pro = match cmd.spawn() {
         Ok(pro) => pro,
         Err(e) => error_exit(format!("Failure to launch game: {e}").as_str())
     };
 
-    
     // ctrlc::set_handler(|| {
     //     
     //     println!("Termination requested");
     //
     // }).expect("Interrupt handler should never fail to be created");
+    
     let _ = pro.wait();
     
 
-    // TODO send dbus notification about shutdown
-
-    drop(maps); // Maps and their files are cleaned up on drop
+    
+    // Game closed, wrapping up
     println!("Datalink Bridge shutdown (window should close now)");
+    send_dbus(callback.as_str(), "--unset-playing", game_id.as_str());
+    drop(maps); // Maps and their files are cleaned up on drop
 
     // std::thread::sleep(std::time::Duration::from_secs(5));
 }
@@ -122,5 +125,20 @@ fn error_exit(msg: &str) -> ! {
     std::thread::sleep(std::time::Duration::from_secs(5));
 
     std::process::exit(1)
+}
+
+fn send_dbus(callback: &str, op: &str, game_id: &str) {
+
+    // Yes, we are launching a linux process from wine...
+    // Apparently wine when calling CreateProcess on a elf-linux will
+    // not fail, but instead make wine launch it as a linux process
+    let mut cmd = std::process::Command::new(callback);
+    cmd.arg(op);
+    cmd.arg(game_id);
+
+
+    // However, as such the child handle is useless, trying to wait on it gives and invalid handle
+    // error, so we never know if it succeeded, but we just hope
+    let _ = cmd.spawn();
 }
 

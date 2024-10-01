@@ -7,6 +7,7 @@ use serde::{Serialize, Deserialize};
 mod test;
 
 /// The definitions for memory maps for this specfic Prefix/Game.  
+///
 /// The game_id is usually read from the AppID in the steam launch command,
 /// but can be overwritten here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,7 +119,9 @@ pub fn read_config() -> Result<Option<GameMemoryMapsConfig>, String> {
     }
 
     let conf = fs::read_to_string(path).map_err(|e| format!("{e}"))?;
-    Ok(Some(serde_json::from_str(&conf).map_err(|e| format!("{e}"))?))
+    let mut res:GameMemoryMapsConfig = serde_json::from_str(&conf).map_err(|e| format!("{e}"))?;
+    res.sanitize();
+    Ok(Some(res))
 }
 
 /// Finds the folder within the prefix

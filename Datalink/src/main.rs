@@ -1,5 +1,7 @@
 use std::{fs, os::unix::process::CommandExt, path::PathBuf};
 
+mod dbus_handler;
+
 fn main() {
     let mut args = std::env::args();
 
@@ -59,12 +61,27 @@ fn main() {
     } else {
         println!("Launching native Game {} as child", gameid.as_str());
         if let Ok(mut run) = cmd.spawn() {
+            let file_opt = get_runningfile_path(gameid.as_str());
 
-            // Todo dbus start
 
+            // Send message on dbus and set running file
+            if let Some(f) = file_opt.as_ref() {
+                // We use this wrapper as the pid
+                let _ = fs::write(f, std::process::id().to_string());
+            }
+            dbus_handler::set_playing(gameid.clone());
+
+
+            // Running the game
             let res = run.wait();
 
-            // Todo dbus stop
+
+            // Game exited, deleting running file and sending dbus message
+            if let Some(f) = file_opt {
+                let _ = fs::remove_file(f);
+            }
+            dbus_handler::unset_playing(gameid.clone());
+
 
             match res { 
                 Err(e) => panic!("Exiting Datalink due to game crash:\n{e}"),
@@ -85,6 +102,32 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<String> {
     if let Some(instr) = args.nth(1) {
         match instr.as_str() {
             "--help" => print_help(),
+            "--set-playing" => {
+                let game = args.next()?; // technically should error, but this is enough
+                
+                // Even if writing the cache file fails, we will still send the dbus message
+                if let Some(file) = get_runningfile_path(game.as_str()) {
+
+                    // When called like this we use the parent process
+                    // which when the call came (as expected) from the bridge.exe
+                    // will not be the bridge, but instead the pressure-vessel/wine
+                    fs::write(file, std::os::unix::process::parent_id().to_string()).ok()?;
+                }
+
+                dbus_handler::set_playing(game)?;
+            },
+            "--unset-playing" => {
+                let game = args.next()?;
+
+                // Even if deleting the cache file fails, we will still send the dbus message
+                if let Some(file) = get_runningfile_path(game.as_str()) {
+                    if file.exists() {
+                        let _ = fs::remove_file(file);
+                    }
+                }
+
+                dbus_handler::unset_playing(game)?;
+            },
 
             _ => return Some(instr)
         }
@@ -94,6 +137,8 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<String> {
 
     None
 }
+
+
 
 fn print_help() {
     println!("Datalink is a command wrapper that notifies\n
@@ -106,6 +151,20 @@ fn print_help() {
         ");
 }
 
+fn get_runningfile_path(game: &str) -> Option<PathBuf> {
+    let mut path = get_cache_folder()?;
+    path.push("running");
+
+    if !path.exists() {
+        fs::create_dir(path.as_path()).ok()?;
+    } else if !path.is_dir() {
+        return None;
+    }
+
+    path.push(game);
+    Some(path)
+}
+
 /// This folder is ~/.cache/Datalink
 /// If it doesn't exist we create it, if all that fails None is returned
 fn get_cache_folder() -> Option<PathBuf> {
@@ -114,6 +173,8 @@ fn get_cache_folder() -> Option<PathBuf> {
 
     if !buff.exists() {
         fs::create_dir(buff.as_path()).ok()?;
+    } else if !buff.is_dir() {
+        return None;
     }
 
     Some(buff)

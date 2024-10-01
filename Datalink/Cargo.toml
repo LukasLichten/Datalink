@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 dirs = "^5.0"
+dbus = "^0.9"
