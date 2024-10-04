@@ -1,5 +1,5 @@
 # Datalink
-Simple wrapper around Steam/Proton Games that sends notification of their launch and deploys a Shared memory bridge
+Simple wrapper around Steam/Proton Games that can deploy a memorymap bridge and launch further application from a config file within the prefix
 
 ## Usage
 Apppend Datalink infront of the launch command (same way as Mangohud) by setting the Launch Options on Steam like this:
@@ -8,7 +8,7 @@ Datalink %command%
 ```
 
 You are free to combine this with Mangohud and or regular launch options.  
-This works even with Linux native steam games, although no memorymaps will be setup for those (but the launch is still communicated).
+This works even with Linux native steam games, although no memorymaps or apps will be setup for those (but the launch is still communicated).
 
 ## Programmatical Usage
 For writing game tools this wrapper exposes resources (memory maps) and notifies when the game is launched (so you can start reading data).  
@@ -31,11 +31,21 @@ Doing it this way circumnavigates numerous problems found in [Related Porjects](
 - when using this method of making windows api/wine back the memorymaps to `/dev/shm` you have to create them before the game
 - Otherwise you have to employ a software that constantly copied memory from the wine side to the linux side
 
-### Configuring Memory Maps
+### Autolaunching Apps
+But we can also launch windows apps within the prefix alongside our game. 
+This is useful if there isn't a linux native version of the software yet, and circumfents some issues listed above.  
+
+The software is launched after the memory maps have been created, and before the game is launched.  
+Software is launched in order (but can not garantee there is enough spacing, so using a script and launching that might be recommended).  
+  
+`taskkill` is used to gracefully shutdown the apps after the game exits (which send `w_close` to all windows of the application).
+Some apps will then hide into the tray, and will be (like stuck tasks) after 5s terminated through use of the `/f` flag.
+
+### Configuring The Bridge
 The config is on a per Proton Prefix basis, located in `C:\users\steamuser\AppData\Roaming\Datalink\config.json`
 (although username might be different if the prefix is configured differently).  
   
-You can use the, present in this repository, config crate `datalink-memmap-config`,
+You can use the, present in this repository, config crate `datalink-bridge-config`,
 which contains the structs and function for deserialzing the crate.  
 Additionally with the `proton` feature you can use [proton-finder](https://github.com/LukasLichten/proton-finder)
 crate to automatically find the prefix for the game and with it the config file.  
@@ -47,17 +57,29 @@ If the game_id was set (by your config or the existing), then they need to match
 In case of manual writing (e.g. other programming language), this is an example config:
 ```
 {
-    "game_id":"override"
+    "game_id":"override",
     "maps": [
         {
           "name": "acpmf_crewchief",
           "size": 15660
         }
+    ],
+    "root_mount_point": "L",
+    "apps": [
+        {
+          "path": "C:\\users\\steamuser\\Documents\\Little Navconnect\\littlenavconnect.exe",
+          "args": []
+        }
     ]
 }
 ```
-The `game_id` is optional (can be null-ed or omitted) and changes the game reported over dbus (and debug console).  
-The `maps` field is required, and needs to have at minimum an empty array.
+All fields are optional (except for contained structs):  
+ - `game_id` changes the game reported over dbus (and debug console), omitting it or setting to null will use the value from steam. As shown, doesn't have to be a number, can be any valid string
+ - `maps` has to be an array (or ommited), each map MUST contain a `name` (used by windows and then also in `/dev/shm`) and a `size`.  
+ - `root_mount_point` optionally sets the letter ot override the default `Z:\` mount point that wine uses to mount in the linux filesystem (in case of an unusal wine prefix).
+ - `apps` has to be and array (or ommitted), each app MUST contain a `path`
+ (path to the executable, either an absolute linux or windows path (remember, json also uses `\` as escape character, so `\\` above is only one, and the correct way of doing it),
+ or a relative path relative to the `AppData\Roaming\Datalink` folder) and an args array
 
 
 ### Game Status Notification

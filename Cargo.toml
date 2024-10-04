@@ -1,4 +1,4 @@
 [workspace]
-members = ["Datalink", "datalink-memmap-config","datalink-shm-bridge"]
+members = ["Datalink", "datalink-bridge-config","datalink-shm-bridge"]
 default-members = ["Datalink"]
 resolver = "2"

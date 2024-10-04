@@ -14,10 +14,10 @@ clean:
 	cargo clean
 
 lib-test:
-	cd datalink-memmap-config && cargo test --all-features
+	cd datalink-bridge-config && cargo test --all-features
 
 lib-example:
-	cd datalink-memmap-config && cargo run --all-features --example create_acc_config
+	cd datalink-bridge-config && cargo run --all-features --example create_acc_config
 
 help:
 	@echo "Builds and test the shm-bridge"

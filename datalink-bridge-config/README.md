@@ -1,4 +1,4 @@
-# Datalink-memmap-config
+# Datalink-bridge-config
 Provides the config file formate for [Datalink](https://github.com/LukasLichten/Datalink), 
 and provides methodes for easily reading and writing these configuration.
 

@@ -35,11 +35,11 @@ use windows::{
 
 const TMPFS_MOUNT:&str = "/dev/shm";
 
-pub fn get_tmpfs_mountpoint() -> Option<PathBuf> {
+pub fn get_tmpfs_mountpoint(root: char) -> Option<PathBuf> {
     let buf = PathBuf::from_str(
         // Technically, this is infalliable on Some() input, but if that function is changed it
         // could, and we have to wrap error handling for PathBuf anyway
-        crate::convert_linux_path_to_wine(Some(TMPFS_MOUNT.to_string()))?.as_str()
+        crate::convert_linux_path(root, TMPFS_MOUNT.to_string()).as_str()
     ).ok()?;
 
     if buf.exists() {
