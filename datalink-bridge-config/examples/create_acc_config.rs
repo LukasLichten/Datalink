@@ -16,5 +16,5 @@ fn main() {
         MemMapConfig { name: "acpmf_graphics".to_string(), size: 2048 },
     ]);
 
-    let _ = dbg!( config.write_config(&drive) ); // LSP doesn't know we have the feature enabled
+    let _ = dbg!( config.write_config(&drive, "com.github.lukaslichten.datalink.test", true) ); // LSP doesn't know we have the feature enabled
 }

@@ -39,10 +39,12 @@ The software is launched after the memory maps have been created, and before the
 Software is launched in order (but can not garantee there is enough spacing, so using a script and launching that might be recommended).  
   
 `taskkill` is used to gracefully shutdown the apps after the game exits (which send `w_close` to all windows of the application).
-Some apps will then hide into the tray, and will be (like stuck tasks) after 5s terminated through use of the `/f` flag.
+Some apps will then hide into the tray, and will be (like stuck tasks) after 5s terminated through use of the `/f` flag.  
+  
+Additionally a single `post_app` can be configured, allowing you to do clean up after the game (and apps exited).  
 
 ### Configuring The Bridge
-The config is on a per Proton Prefix basis, located in `C:\users\steamuser\AppData\Roaming\Datalink\config.json`
+The config is on a per Proton Prefix basis, located in `C:\users\steamuser\AppData\Roaming\Datalink\[name].json`
 (although username might be different if the prefix is configured differently).  
   
 You can use the, present in this repository, config crate `datalink-bridge-config`,
@@ -50,9 +52,18 @@ which contains the structs and function for deserialzing the crate.
 Additionally with the `proton` feature you can use [proton-finder](https://github.com/LukasLichten/proton-finder)
 crate to automatically find the prefix for the game and with it the config file.  
   
-It is recommened to always use the write methods instead of force write methods, so multiple programs can contribute to the config file,
-and all of them can read the data they want. If a map with the same name already exists, then the larger of the two is kept, all others are kept.  
-If the game_id was set (by your config or the existing), then they need to match (and only one being set is also a missmatch).
+As multiple programms could want different configurations, the bridge reads all json in the folder and merges them together.  
+This occures on basic rules: 
+- maps with the same name the larger is used
+- apps are merged if path and args match completly, otherwise it keeps both commands
+- if different game_id's are set, then all game_id's will be notified over the dbus
+ - Including the default, if one or more config is unset/null
+- root_mount_point the first none Z value that is read is used, any missmatches will result in them being logged
+ - Order Is NOT necesaarily alphabetic
+ - Errors are only logged, but ignored
+  
+To avoid conflict with other config files, it is best practice to set your config to a unique name, 
+for example reverse domain: `com.github.lukaslichten.datalink.json`  
   
 In case of manual writing (e.g. other programming language), this is an example config:
 ```
@@ -70,7 +81,14 @@ In case of manual writing (e.g. other programming language), this is an example 
           "path": "C:\\users\\steamuser\\Documents\\Little Navconnect\\littlenavconnect.exe",
           "args": []
         }
-    ]
+    ],
+    "post_app": {
+        "path": "del",
+        "args": [
+            "C:\\users\\steamuser\\AppData\\Roaming\\running"
+        ]
+    },
+    "notes": "v1"
 }
 ```
 All fields are optional (except for contained structs):  
@@ -80,6 +98,8 @@ All fields are optional (except for contained structs):
  - `apps` has to be and array (or ommitted), each app MUST contain a `path`
  (path to the executable, either an absolute linux or windows path (remember, json also uses `\` as escape character, so `\\` above is only one, and the correct way of doing it),
  or a relative path relative to the `AppData\Roaming\Datalink` folder) and an args array
+ - `post_app` is a single app struct (as defined above), or null/omitted
+ - `notes` an additional field, should contain a string. Is not read by the bridge, and only used by you to for example note a version number for this config.
 
 
 ### Game Status Notification
@@ -87,7 +107,7 @@ Once the memory maps are setup the bridge will send out a signal over the dbus, 
 This also works for native games.
   
 To avoid running a background server the message spec is not inspectable, as usually for dbus services.  
-Further, the message is broadcast (to everyone on the session bus), not unicast, and the sender does not have a "well-known" name,
+Further, the message is broadcast (to everyone on the session bus), aka not unicast, and the sender does not have a "well-known" name,
 not even fixed name for the same game session.  
   
 As such you will have to employ message filtering:

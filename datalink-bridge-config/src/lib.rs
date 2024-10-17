@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(test)]
 mod test;
@@ -38,15 +38,37 @@ pub struct GameBridgeConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub apps: Vec<App>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_app: Option<App>,
 
+    // Useful to the individual programm to store the version for example
+    // Allows them to update the version number if needed
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "never_fail_notes")]
+    notes: Option<String>, 
+
+    // Serves also to prevent manual instanciation, and breakage cause by it and new options
     #[serde(default, skip_serializing_if = "DriveLetterWrapper::is_default")]
     root_mount_point: DriveLetterWrapper
-    // Serves also to prevent manual instanciation, and breakage cause by it and new options
+}
+
+/// Insures that even if notes is not properly serialized, that the struct does not fail
+fn never_fail_notes<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    if let Ok(s) = Deserialize::deserialize(deserializer) {
+        let s: Option<String> = s;
+        Ok(s)
+    } else {
+        // We can not afford to fail this, in case someone wrote some other datatype into this,
+        // so that the bridge still works we ommit it this way
+        Ok(None)
+    }
 }
 
 impl Default for GameBridgeConfig {
     fn default() -> Self {
-        Self { game_id: None, maps: Vec::default(), apps: Vec::default(), root_mount_point: DriveLetterWrapper::default() }
+        Self { game_id: None, maps: Vec::default(), apps: Vec::default(), root_mount_point: DriveLetterWrapper::default(), post_app: None, notes: None }
     }
 }
 
@@ -100,6 +122,16 @@ impl GameBridgeConfig {
         self
     }
 
+    /// Gives the game_id override, if set
+    pub fn get_name_override<'a>(&'a self) -> Option<&'a String> {
+        self.game_id.as_ref()
+    }
+
+    /// Sets the game_id override
+    pub fn set_name_override(&mut self, game_id: Option<String>) {
+        self.game_id = game_id;
+    }
+
     /// Sets additional programms to be launched
     pub fn with_autolaunch_apps(mut self, apps: Vec<App>) -> Self {
         self.apps = apps;
@@ -119,6 +151,35 @@ impl GameBridgeConfig {
         self.root_mount_point.0
     }
 
+    /// This adds an App/Command to run after the game exited and the apps closed.
+    /// Useful for cleanup purposes
+    pub fn with_post_run_app(mut self, app: App) -> Self {
+        self.post_app = Some(app);
+        self
+    }
+
+    /// Adds notes to this Config.
+    ///
+    /// This is useful so you can for example denote the version of this config,
+    /// so you can check if this config file is up to date at a later date
+    pub fn with_notes(mut self, notes: String) -> Self {
+        self.notes = Some(notes);
+        self
+    }
+
+    /// Gives you back the notes for this config (if set)
+    ///
+    /// This is useful so you can for example denote the version of this config,
+    /// so you can check if this config file is up to date at a later date
+    pub fn get_notes<'a>(&'a self) -> Option<&'a String> {
+        self.notes.as_ref()
+    }
+
+    /// Sets the notes for this config to the given value
+    pub fn set_notes(&mut self, notes: Option<String>) {
+        self.notes = notes;
+    }
+
 
     /// Converts a linux path, by appending the drive letter for the mount point and converting the
     /// remainder of the path.
@@ -129,49 +190,49 @@ impl GameBridgeConfig {
         convert_linux_path_to_wine(self.root_mount_point.0, path)
     }
 
-    /// Reads (if present) the config at the prefix,
-    /// if compatible with the new_config passed in they will be merged and written into the file (with the
-    /// result being returned within the Ok()).
-    /// If the two are not compatible, then Err(Some()) with the value being the current config.
-    /// Err(None) if there is an IO error on write.
+    /// Writes a config with this name into the prefix.
     ///
-    /// Merge rules are:
-    /// - The same game_id has to be set (so if the original has None, the new_config has to be too)
-    /// - The list of memory maps is appeneded and sanitized:
-    ///   - If there is a dupplicate, then the smaller map is removed
-    /// - Apps is appeneded and sanitized
-    ///   - Commands are only considered dublicates, if exec and all arguments match
-    /// - root_mount_point is considered unset if set to Z, if one has a different value then Z that
-    /// different value is used, if both are set then they have to be the same or else it will be
-    /// treated as a missmatch like game_id
+    /// If the config file already exists, and overwrite is false, then it won't be written, and
+    /// false is returned (flase is also returned if any other write error occures)
     #[cfg(feature = "proton")]
-    pub fn write_config(self, game_drive: &proton_finder::GameDrive) -> Result<Self, Option<Self>> {
-        if let Some(path) = get_path_from_prefix(game_drive) {
-            manual_write_config(&path, self)
-            
-        } else {
-            Err(None)
-        }
-    }
-
-    /// Writes to config for the prefix, overwriting any config already present.
-    ///
-    /// This is undesirable, as another programm might want to reserve different maps in this
-    /// prefix, and you would efecitely delete all them. Use `write_config` instead.
-    #[cfg(feature = "proton")]
-    pub fn force_write_config(self, game_drive: &proton_finder::GameDrive) -> bool {
-        if let Some(path) = get_path_from_prefix(game_drive) {
-            manual_force_write_config(&path, self)
+    pub fn write_config(self, game_drive: &proton_finder::GameDrive, name: &str, overwrite: bool) -> bool {
+        if let Some(mut path) = get_path_from_prefix(game_drive) {
+            path.push(format!("{name}.json"));
+            manual_write_config(&path, self, overwrite)
         } else {
             false
         }
     }
 
-    /// Reads the config within this prefix
+    /// Reads the config with this name within this prefix
     #[cfg(feature = "proton")]
-    pub fn read_config(game_drive: &proton_finder::GameDrive) -> Option<Self> {
-        let path = get_path_from_prefix(game_drive)?;
+    pub fn read_config(game_drive: &proton_finder::GameDrive, name: &str) -> Result<Self, String> {
+        let mut path = get_path_from_prefix(game_drive).ok_or("Failed to generate file path".to_string())?;
+        path.push(format!("{name}.json"));
         manual_read_config(&path)
+    }
+
+    /// Reads all configs for this prefix, the same way the Datalink bridge does it.
+    ///
+    /// This returns the merger of all the configs:
+    /// - Maps with the same name we keep the largest
+    /// - Apps only match if both exec and arguments match completly (else both are kept)
+    ///
+    /// If different game_ids are set, then the Option<Vec> will return Some containing the other names.
+    /// If one config has the override unset, then `GameBridgeConfig.game_id` will be None, but the
+    /// Option<Vec> can still be some and contain the overrides from other configs.
+    ///
+    /// If different root_mount_points are set, then the one found first will be used (and a
+    /// message is logged out). The order in which is read is not necessarily alphabetic, and could
+    /// even change run to run.
+    #[cfg(feature = "proton")]
+    pub fn read_config_for_prefix(game_drive: &proton_finder::GameDrive) -> (Option<(Self, Option<Vec<String>>)>, Result<(), String>) {
+        let path = if let Some(val) = get_path_from_prefix(game_drive) {
+            val
+        } else {
+            return (None, Err("Failed to get folder path".to_string()));
+        };
+        manual_read_configs_from_folder(&path)
     }
 }
 
@@ -324,7 +385,7 @@ impl ToString for App {
 ///
 /// Default letter is usually Z
 #[cfg(target_os = "windows")]
-pub fn convert_linux_path_to_wine(drive_letter: char ,path: String) -> String {
+pub fn convert_linux_path_to_wine(drive_letter: char, path: String) -> String {
     let p = path.replace('/', "\\");
     let complete = format!("{}:", drive_letter.to_ascii_uppercase()) + &p;
 
@@ -342,23 +403,21 @@ pub fn get_config_folder_path() -> Option<PathBuf> {
 }
 
 /// Aquires the config (for this prefix) from
-/// C:\Users\[current]\AppData\Roaming\Datalink\config.json
+/// C:\Users\[current]\AppData\Roaming\Datalink
 #[cfg(target_os = "windows")]
-pub fn read_config() -> Result<Option<GameBridgeConfig>, String> {
-    let mut path = match get_config_folder_path() {
+pub fn read_config() -> (Option<(GameBridgeConfig, Option<Vec<String>>)>, Result<(), String>) {
+    let path = match get_config_folder_path() {
         Some(p) => p,
-        None => return Ok(None)
+        None => return (None, Ok(()))
     };
-    path.push("config.json");
 
     if !path.exists() {
-        return Ok(None);
+        if let Err(e) = std::fs::create_dir(path.as_path()) {
+            return (None, Err(format!("Failed to created none existant folder: {e}")));
+        }
     }
 
-    let conf = fs::read_to_string(path).map_err(|e| format!("{e}"))?;
-    let mut res:GameBridgeConfig = serde_json::from_str(&conf).map_err(|e| format!("{e}"))?;
-    res.sanitize();
-    Ok(Some(res))
+    manual_read_configs_from_folder(&path)
 }
 
 /// Finds the folder within the prefix
@@ -375,18 +434,24 @@ pub(crate) fn get_path_from_prefix(game_drive: &proton_finder::GameDrive) -> Opt
         fs::create_dir(path.as_path()).ok()?;
     }
 
-    path.push("config.json");
     Some(path)
 }
 
 
-/// Writes to config to a path you specified, overwriting a file if present already.
+/// Writes to config to a path you specified.
+///
+/// If a file already exists, and overwrite is false, then no file is written, and returns false.
+/// It can also return false if the write fails.
 ///
 /// Manual forces you to make sure it is written where the Datalink bridge can read it, effectively: 
-/// C:\Users\[current]\AppData\Roaming\Datalink\config.json
+/// C:\Users\[current]\AppData\Roaming\Datalink\*.json
 /// Using the proton feature allows you to use proton-finder and skip finding the path
-pub fn manual_force_write_config(path: &PathBuf, config: GameBridgeConfig) -> bool {
+pub fn manual_write_config(path: &PathBuf, config: GameBridgeConfig, overwrite: bool) -> bool {
     if let Ok(text) = serde_json::to_string_pretty(&config) {
+        if path.exists() && !overwrite {
+            return false;
+        }
+
         if fs::write(path, text).is_ok() {
             return true;
         }
@@ -396,76 +461,153 @@ pub fn manual_force_write_config(path: &PathBuf, config: GameBridgeConfig) -> bo
     false
 }
 
-/// Reads (if present) the config at the manually specified location,
-/// if compatible with the new_config passed in they will be merged and written into the file (with the
-/// result being returned within the Ok()).
-/// If the two are not compatible, then Err(Some()) with the value being the current config.
-/// Err(None) if there is an IO error on write.
+/// Reads a config at the path you manually specified.
 ///
-/// Merge rules are:
-/// - The same game_id has to be set (so if the original has None, the new_config has to be too)
-/// - The list of memory maps is appeneded and sanitized:
-///   - If there is a dupplicate, then the smaller map is removed
-/// - Apps is appeneded and sanitized
-///   - Commands are only considered dublicates, if exec and all arguments match
-/// - root_mount_point is considered unset if set to Z, if one has a different value then Z that
-/// different value is used, if both are set then they have to be the same or else it will be
-/// treated as a missmatch like game_id
-///
-/// Manual forces you to make sure it is written where the Datalink bridge can read it, effectively: 
-/// C:\Users\[current]\AppData\Roaming\Datalink\config.json
+/// Manual forces you to make sure this is the correct location, effectively:
+/// C:\Users\[current]\AppData\Roaming\Datalink\*.json
 /// Using the proton feature allows you to use proton-finder and skip finding the path
-pub fn manual_write_config(path: &PathBuf, mut new_config: GameBridgeConfig) -> Result<GameBridgeConfig, Option<GameBridgeConfig>> {
-    let target_config = if let Some(original) = manual_read_config(path) {
-        // There is already a config, we are merging them
-        if new_config.game_id != original.game_id {
-            // But not if the name disagree
-            return Err(Some(original));
-        }
-
-        // Handling mountpoint
-        let root = if !new_config.root_mount_point.is_default() && !original.root_mount_point.is_default() && !original.root_mount_point.0.eq_ignore_ascii_case(&new_config.root_mount_point.0) {
-            // Both are set, and to different values, exit
-            return Err(Some(original))
-        } else if !original.root_mount_point.is_default() {
-            // Original is unset, so we return the new one
-            // Possible the new one is also unset, but doesn't matter, this will then just unset it again
-            new_config.root_mount_point
-        } else {
-            // Original is set, new must be unset or the same, so this is fine
-            original.root_mount_point
-        };
-        
-        let mut merged_config = original.clone();
-
-        merged_config.maps.append(&mut new_config.maps);
-        
-        if !new_config.apps.is_empty() {
-            merged_config.apps.append(&mut new_config.apps);
-        }
-
-        merged_config.root_mount_point = root;
-        merged_config.sanitize();
-
-        merged_config
-    } else {
-        new_config
-    };
-
-    
-    if manual_force_write_config(&path, target_config.clone()) {
-        Ok(target_config)
-    } else {
-        Err(None)
-    }
+pub fn manual_read_config(path: &PathBuf) -> Result<GameBridgeConfig, String> {
+    let conf = fs::read_to_string(path.as_path()).map_err(|e| format!("Failed to read {}: {}", path.to_str().unwrap_or("<no path>"), e))?;
+    serde_json::from_str(&conf).map_err(|e| format!("Failed to parse {}: {}", path.to_str().unwrap_or("<no path>"), e))
 }
 
-/// Reads the config at the path you manually specified.
+
+/// Reads through all config in the relevant folder, merging them together.
+/// 
+/// If different game_ids are set, then the Option<Vec> will return Some containing the other names.
+/// If one config has the override unset, then `GameBridgeConfig.game_id` will be None, but the
+/// Option<Vec> can still be some and contain the overrides from other configs.
 ///
-/// Manual forces you to make sure this is where the correct location, effectively:
-/// C:\Users\[current]\AppData\Roaming\Datalink\config.json
+/// This returns the merger of all the configs:
+/// - Maps with the same name we keep the largest
+/// - Apps only match if both exec and arguments match completly (else both are kept)
+///
+/// If different root_mount_points are set, then the one found first will be used (and a
+/// message is logged out). The order in which is read is not necessarily alphabetic, and could
+/// even change run to run.
+///
+/// Manual forces you to make sure this is the correct location, effecitvely:
+/// C:\Users\[current]\AppData\Roaming\Datalink
 /// Using the proton feature allows you to use proton-finder and skip finding the path
-pub fn manual_read_config(path: &PathBuf) -> Option<GameBridgeConfig> {
-    let conf = fs::read_to_string(path.as_path()).ok()?;
-    serde_json::from_str(&conf).ok()
+pub fn manual_read_configs_from_folder(folder: &PathBuf) -> (Option<(GameBridgeConfig, Option<Vec<String>>)>, Result<(), String>) {
+    // Helper function that merges two entries
+    fn merge(read: GameBridgeConfig, res: &mut Option<(GameBridgeConfig, Option<Vec<String>>)>, err: &mut String) {
+        let (old, alt_name_list) = if let Some((old, alt_name_list)) = res {
+            (old, alt_name_list)
+        } else {
+            *res = Some((read, None));
+            return;
+        };
+
+        // Merging mountpoint
+        if !read.root_mount_point.is_default() && !old.root_mount_point.is_default() &&
+            !old.root_mount_point.0.eq_ignore_ascii_case(&read.root_mount_point.0) {
+
+            // Both are set, and to different values
+            // Sort of a problem, but eh, screw it
+            
+            *err = format!("{err}\nTwo configs had different root mountpoints set: {} and {}, using {}", old.get_root_mount_point(), read.get_root_mount_point(), old.get_root_mount_point());
+
+        } else if !old.root_mount_point.is_default() {
+            // Original is unset, so we return the new one
+            // Possible the new one is also unset, but doesn't matter, this will then just unset it again
+            old.root_mount_point.0 = read.root_mount_point.0;
+        } else {
+            // Original is set, new must be unset or the same, so this is fine
+        }
+
+        // Merging appid override
+        if old.game_id.is_some() && read.game_id.is_none() {
+            // We will set the override in old to none, and move it into the alt_name_list
+            // This way we can inform that one config requested the original game_id
+            
+            let value = old.game_id.clone().expect("We just checked for some");
+            
+            let list = if let Some(list) = alt_name_list {
+                list
+            } else {
+                *alt_name_list = Some(vec![]);
+                alt_name_list.as_mut().expect("We literally just assigned it")
+            };
+
+            (*old).game_id = None;
+            if !list.contains(&value) {
+                list.push(value);
+            }
+        } else if let Some(new) = read.game_id.as_ref() {
+            // old must be none, so we append this one to the alt list and leave old as none
+            // because of the reasons mentioned above
+            fn write_into_it(alt_name_list: &mut Option<Vec<String>>, new: &String) {
+                let list = if let Some(list) = alt_name_list {
+                    list
+                } else {
+                    *alt_name_list = Some(vec![]);
+                    alt_name_list.as_mut().expect("We literally just assigned it")
+                };
+
+                if !list.contains(new) {
+                    list.push(new.to_string());
+                }
+            }
+
+            if let Some(older) = old.game_id.as_ref() {
+                if new != older {
+                    write_into_it(alt_name_list, new)
+                }
+            } else {
+                write_into_it(alt_name_list, new)
+            }
+        }
+
+        // Merge Applist
+        let mut read = read;
+        old.apps.append(&mut read.apps);
+
+        old.maps.append(&mut read.maps);
+    }
+
+    let dir = match folder.read_dir() {
+        Ok(dir) => dir,
+        Err(e) => return (None, Err(format!("Failed to read folder: {e}")))
+    };
+
+    let mut res:Option<(GameBridgeConfig, Option<Vec<String>>)> = None;
+    let mut err = String::new();
+
+    for item in dir {
+        match item {
+            Ok(item) => {
+                if let Some(ext) = item.path().extension() {
+                    if ext == "json" {
+                        match manual_read_config(&item.path()) {
+                            Ok(read) => {
+                                merge(read, &mut res, &mut err);
+                            },
+                            Err(e) => {
+                                err = format!("{err}\n{}", e);
+                            }
+                        }
+                    }
+                    // The extension checks do not need an else case, as we just ignore any file
+                    // that doesn't end in json
+                }
+            },
+            Err(e) => {
+                err = format!("{err}\nUnable to get directory entry: {}", e);
+            }
+        }
+    }
+
+    // Sanitizing
+    if let Some((val, _)) = res.as_mut() {
+        val.sanitize();
+    }
+
+    let err = if err.is_empty() {
+        Ok(())
+    } else {
+        Err(err)
+    };
+
+    (res, err)
 }

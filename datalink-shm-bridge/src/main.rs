@@ -19,17 +19,47 @@ fn main() {
     let game_exe = expect_exit(args.next(), "Missing argument, expected game executable");
     
     // Reading the config
-    let (callback, game_exe, game_id, maps, apps) = match datalink_bridge_config::read_config() { // The LSP pretends the function does not exist
-        Ok(Some(config)) => {
+    let (callback, game_exe, game_id, maps, apps, post_app) = match datalink_bridge_config::read_config() { // The LSP pretends the function does not exist
+        (Some((config, alt)), err) => {
             let config: GameBridgeConfig = config; // We can at least code with this still
 
-            let game_id = if let Some(alter) = config.game_id.as_ref() {
-                alter.clone()
+            let mut game_names = if let Some(list) = alt {
+                list
             } else {
-                game_id
+                Vec::<String>::new()
             };
 
-            println!("{} starting...", game_id.as_str());
+            if let Some(alter) = config.game_id.as_ref() {
+                game_names.push(alter.clone());
+            } else {
+                game_names.push(game_id);
+            };
+
+
+            let mut output = game_names.get(0).expect("We have at least one name for the game").clone();
+            if game_names.len() > 1 {
+                output = format!("{output} (also known as");
+                
+                let mut iter = game_names.iter();
+                iter.next(); // Skip the first, as we have it already
+
+                for name in iter {
+                    output = format!("{output} {name},");
+                }
+                
+                if let Some(val) = output.strip_suffix(',') {
+                    output = format!("{val})");
+                }
+            }
+            
+
+            println!("{output} starting...");
+
+            
+            // Error handling
+            if let Err(e) = err {
+                println!("Errors Occured during Reading:\n{e}\nContinuing (but configuration might be wrong)");
+            }
 
 
             // Memory maps
@@ -71,9 +101,9 @@ fn main() {
 
             }
 
-            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_id, maps, apps)
+            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_names, maps, apps, config.post_app.map(|app| (app, root)))
         },
-        Ok(None) => {
+        (None, Ok(())) => {
             println!("{} starting...", game_id.as_str());
 
             println!("No Config File Found!");
@@ -81,20 +111,18 @@ fn main() {
 
             let root = datalink_bridge_config::GameBridgeConfig::default().get_root_mount_point();
 
-            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_id, Vec::<FileMapping>::new(), Vec::<std::process::Child>::new())
+            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), vec![game_id], Vec::<FileMapping>::new(), Vec::<std::process::Child>::new(), None)
         },
-        Err(e) => {
+        (None, Err(e)) => {
             println!("{} starting...", game_id.as_str());
 
-            // Should we crash on this?
-
-            println!("Failed to read Config File:");
+            println!("Failed to read Config File(s):");
             println!("{e}");
             println!("No Memory Maps and Apps will be deployed, dbus will still be notified!");
 
             let root = datalink_bridge_config::GameBridgeConfig::default().get_root_mount_point();
 
-            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_id, Vec::<FileMapping>::new(), Vec::<std::process::Child>::new())
+            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), vec![game_id], Vec::<FileMapping>::new(), Vec::<std::process::Child>::new(), None)
         }
     };
 
@@ -106,7 +134,9 @@ fn main() {
     }
     
     // Pre-Game dbus message
-    send_dbus(callback.as_str(), "--set-playing", game_id.as_str());
+    for name in game_id.iter() {
+        send_dbus(callback.as_str(), "--set-playing", name.as_str());
+    }
 
 
     // Launching the game
@@ -128,12 +158,33 @@ fn main() {
     
     // Game closed, wrapping up
     println!("Datalink Bridge shutting down...");
-    send_dbus(callback.as_str(), "--unset-playing", game_id.as_str());
-    drop(maps); // Maps and their files are cleaned up on drop
+    for name in game_id.iter() {
+        send_dbus(callback.as_str(), "--unset-playing", name.as_str());
+    }
     if !apps.is_empty() {
         println!("Terminating auxilary apps...");
         if close_apps(apps) {
             
+        }
+    }
+    drop(maps); // Maps and their files are cleaned up on drop
+
+    // Post App for cleanup purposes
+    if let Some((app,root)) = post_app {
+        match start_side_app(root, app) {
+            Ok(mut child) => {
+                if let Ok(Some(_)) = child.try_wait() {
+                    // Already exited, no need to wait
+                } else {
+                    // We give it one second execution time before termination
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    let _ = close_apps(vec![child]);
+                }
+            },
+            Err(e) => {
+                println!("Unable to run post run app: {e}");
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
         }
     }
 
