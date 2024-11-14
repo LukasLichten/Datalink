@@ -5,7 +5,7 @@ mod dbus_handler;
 fn main() {
     let mut args = std::env::args();
 
-    let exe = if let Some(exe) = handle_instructions(&mut args) {
+    let (exe, exec_override) = if let Some(exe) = handle_instructions(&mut args) {
         exe
     } else {
         return;
@@ -22,7 +22,7 @@ fn main() {
     let mut gameid = String::new(); // We pass it anyway as a parameter, might as well be string
     let mut is_proton = false;
 
-    for item in args {
+    while let Some(item) = args.next() {
         // Scanning for info and manipulating command
         if let Some(id) = item.strip_prefix("AppId=") {
             gameid = id.to_string();
@@ -41,7 +41,13 @@ fn main() {
                 cmd.arg(this_exec);
                 cmd.arg(gameid.as_str());
                 
-                
+                if let Some(over) = exec_override.as_ref() {
+                    cmd.arg(over.clone());
+                } else if let Some(game_exec) = args.next() {
+                    cmd.arg(game_exec);
+                } else {
+                    panic!("Error one deploying bridge, no game exec given");
+                }
             } else {
                 panic!("Error on deploying bridge");
                 // Is a panic overkill? Yes. But letting the launch continue would lead to a
@@ -98,7 +104,7 @@ fn main() {
 /// The bridge will use our programm to handle dbus and other resources,
 /// so we will check if the parameter is an instruction, or an exec,
 /// and we hand the exec back for execution
-fn handle_instructions(args: &mut std::env::Args) -> Option<String> {
+fn handle_instructions(args: &mut std::env::Args) -> Option<(String, Option<String>)> {
     if let Some(instr) = args.nth(1) {
         match instr.as_str() {
             "--help" => print_help(),
@@ -128,8 +134,10 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<String> {
 
                 dbus_handler::unset_playing(game)?;
             },
-
-            _ => return Some(instr)
+            "--override" => return exec_override(args),
+            "-O" => return exec_override(args),
+            "-o" => return exec_override(args),
+            _ => return Some((instr, None))
         }
     } else {
         print_help();
@@ -138,7 +146,12 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<String> {
     None
 }
 
+fn exec_override(args: &mut std::env::Args) -> Option<(String, Option<String>)> {
+    let over = args.next()?;
+    let instr = args.next()?;
 
+    Some((instr, Some(over)))
+}
 
 fn print_help() {
     println!("Datalink is a command wrapper that notifies\n
@@ -147,7 +160,11 @@ fn print_help() {
         which will also map the Windows Shared Memory Maps to /dev/shm.\n
         \n
         Standard usage is setting the Launch Option on Steam to:\n
-        Datalink %command%
+        Datalink %command% \n
+        \n
+        You can override the Program that should be used (launching a mod manager for example) using: \n
+        Datalink -O /full/path/to/exec %command% \n
+        -o, -O, --override are all valid \n
         ");
 }
 

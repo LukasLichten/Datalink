@@ -10,6 +10,13 @@ Datalink %command%
 You are free to combine this with Mangohud and or regular launch options.  
 This works even with Linux native steam games, although no memorymaps or apps will be setup for those (but the launch is still communicated).
 
+### Overriding the Game to launch
+You can pass the `--override` flag followed by a path to execute that programm instead of the game:  
+```
+Datalink -O /path/to/exec %command%
+```
+Useful for mod managers/community launchers to launch instead of the game
+
 ## Programmatical Usage
 For writing game tools this wrapper exposes resources (memory maps) and notifies when the game is launched (so you can start reading data).  
   
