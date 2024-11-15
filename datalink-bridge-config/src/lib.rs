@@ -23,6 +23,18 @@ impl DriveLetterWrapper {
     }
 }
 
+/// I want to strangle the serde dev for having to create this absurdity
+/// Because if I add deserialize with to the notes field, and the field does not exist (as Options
+/// tend to be) then it will immediatly fail.
+///
+/// So to maintain this being an optional field I have to do this workaround
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+struct NotesWrapper {
+    #[serde(deserialize_with = "never_fail_notes")]
+    value: String
+}
+
 /// The definitions for memory maps for this specfic Prefix/Game.  
 ///
 /// The game_id is usually read from the AppID in the steam launch command,
@@ -43,8 +55,8 @@ pub struct GameBridgeConfig {
 
     // Useful to the individual programm to store the version for example
     // Allows them to update the version number if needed
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "never_fail_notes")]
-    notes: Option<String>, 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes: Option<NotesWrapper>, 
 
     // Serves also to prevent manual instanciation, and breakage cause by it and new options
     #[serde(default, skip_serializing_if = "DriveLetterWrapper::is_default")]
@@ -52,17 +64,17 @@ pub struct GameBridgeConfig {
 }
 
 /// Insures that even if notes is not properly serialized, that the struct does not fail
-fn never_fail_notes<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+fn never_fail_notes<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
     if let Ok(s) = Deserialize::deserialize(deserializer) {
-        let s: Option<String> = s;
+        let s: String = s;
         Ok(s)
     } else {
         // We can not afford to fail this, in case someone wrote some other datatype into this,
         // so that the bridge still works we ommit it this way
-        Ok(None)
+        Ok(String::new())
     }
 }
 
@@ -163,7 +175,7 @@ impl GameBridgeConfig {
     /// This is useful so you can for example denote the version of this config,
     /// so you can check if this config file is up to date at a later date
     pub fn with_notes(mut self, notes: String) -> Self {
-        self.notes = Some(notes);
+        self.notes = Some(NotesWrapper { value: notes });
         self
     }
 
@@ -172,12 +184,20 @@ impl GameBridgeConfig {
     /// This is useful so you can for example denote the version of this config,
     /// so you can check if this config file is up to date at a later date
     pub fn get_notes<'a>(&'a self) -> Option<&'a String> {
-        self.notes.as_ref()
+        if let Some(n) = self.notes.as_ref() {
+           Some(&n.value)
+        } else {
+            None
+        }
     }
 
     /// Sets the notes for this config to the given value
     pub fn set_notes(&mut self, notes: Option<String>) {
-        self.notes = notes;
+        if let Some(n) = notes {
+            self.notes = Some(NotesWrapper { value: n });
+        } else {
+            self.notes = None;
+        }
     }
 
 
