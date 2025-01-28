@@ -3,6 +3,9 @@ name = "datalink-shm-bridge"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+built = "0.7"
+
 [dependencies]
 datalink-bridge-config = { path = "../datalink-bridge-config" }
 # ctrlc = { version = "^3.4", features = ["termination"] }

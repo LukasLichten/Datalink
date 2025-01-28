@@ -3,6 +3,12 @@ use mmap::FileMapping;
 
 mod mmap;
 
+mod presets;
+
+mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 fn main() {
     // Currently a shell is spawned for this tool being launched
     print!("Datalink Bridge for game ");
@@ -19,7 +25,7 @@ fn main() {
     let game_exe = expect_exit(args.next(), "Missing argument, expected game executable");
     
     // Reading the config
-    let (callback, game_exe, game_id, maps, apps, post_app) = match datalink_bridge_config::read_config() { // The LSP pretends the function does not exist
+    let (callback, game_exe, game_id, maps, apps, post_app) = match datalink_bridge_config::read_config(presets::get_preset(game_id.as_str())) { // The LSP pretends the function does not exist
         (Some((config, alt)), err) => {
             let config: GameBridgeConfig = config; // We can at least code with this still
 

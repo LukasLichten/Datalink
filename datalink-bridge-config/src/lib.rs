@@ -1,6 +1,5 @@
 use std::{fs, path::PathBuf};
 
-
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(test)]
@@ -424,8 +423,10 @@ pub fn get_config_folder_path() -> Option<PathBuf> {
 
 /// Aquires the config (for this prefix) from
 /// C:\Users\[current]\AppData\Roaming\Datalink
+///
+/// Used by Datalink
 #[cfg(target_os = "windows")]
-pub fn read_config() -> (Option<(GameBridgeConfig, Option<Vec<String>>)>, Result<(), String>) {
+pub fn read_config(default_config: Option<GameBridgeConfig>) -> (Option<(GameBridgeConfig, Option<Vec<String>>)>, Result<(), String>) {
     let path = match get_config_folder_path() {
         Some(p) => p,
         None => return (None, Ok(()))
@@ -434,6 +435,29 @@ pub fn read_config() -> (Option<(GameBridgeConfig, Option<Vec<String>>)>, Result
     if !path.exists() {
         if let Err(e) = std::fs::create_dir(path.as_path()) {
             return (None, Err(format!("Failed to created none existant folder: {e}")));
+        }
+
+        if let Some(conf) = default_config {
+            let mut file = path.clone();
+            file.push("datalink-default.json");
+            let _ = manual_write_config(&file, conf, false);
+        }
+    } else if let Some(conf) = default_config {
+        let mut file = path.clone();
+        file.push("datalink-default.json");
+
+        // One way: checking if the versions missmatch and then replace
+        // if let Ok(old_conf) = manual_read_config(&file) {
+        //     if old_conf.get_notes() != conf.get_notes() {
+        //         let _ = manual_write_config(&file, conf, true);
+        //     }
+        // }
+
+        // Other way: Replace it, always...
+        if file.exists() {
+            // Well, as long as the file exists. If it doesn't, the user might have disabled it, so
+            // we won't write it again
+            let _ = manual_write_config(&file, conf, true);
         }
     }
 
