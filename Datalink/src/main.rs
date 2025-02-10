@@ -253,11 +253,11 @@ fn place_bridge_exe(user_debug: bool) -> Option<String> {
         let win_exec = {
             // Build release, no debug feature. Case should not happen, but return release anyway
             #[cfg(all(not(debug_assertions), not(feature = "include-debug")))]
-            { include_bytes!("../../target/x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe") }
+            { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe")) }
 
             // Build release with debug feature, or debug build. Return debug
             #[cfg(any(debug_assertions, feature = "include-debug"))]
-            { include_bytes!("../../target/x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe") }
+            { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe")) }
         };
         fs::write(path.as_path(), win_exec)
     } else {
@@ -265,11 +265,11 @@ fn place_bridge_exe(user_debug: bool) -> Option<String> {
         let win_exec = {
             // Build release, return release
             #[cfg(not(debug_assertions))]
-            { include_bytes!("../../target/x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe") }
+            { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe")) }
 
             // Build debug, return debug
             #[cfg(debug_assertions)]
-            { include_bytes!("../../target/x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe") }
+            { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe")) }
         };
         fs::write(path.as_path(), win_exec)
     };

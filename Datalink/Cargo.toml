@@ -2,6 +2,7 @@
 name = "Datalink"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [features]
 # This also includes the debug version of the datalink-shm-bridge, which spawns a terminal while running
