@@ -3,6 +3,10 @@ name = "Datalink"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# This also includes the debug version of the datalink-shm-bridge, which spawns a terminal while running
+include-debug = []
+
 [dependencies]
 dirs = "^5.0"
 dbus = "^0.9"

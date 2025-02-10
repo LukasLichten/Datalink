@@ -17,6 +17,15 @@ Datalink -O /path/to/exec %command%
 ```
 Useful for mod managers/community launchers to launch instead of the game
 
+### Debugging Configs
+If build with the `include-debug` feature you can make use of the debug flag which will launch the bridge inside of a wine console (where creation of bridges will be logged).  
+```
+Datalink -D %command%
+```
+This feature is set per default when building using `make` (`make build-full` explicitly), however downstream packagers may disable it.  
+You can use `Datalink --help` to view the help, if the feature is included then you will see a similar instruction on how to use it.
+If it isn't, then it is unfortunalty unavailble, at which point you may consider compiling manually.
+
 ## Programmatical Usage
 For writing game tools this wrapper exposes resources (memory maps) and notifies when the game is launched (so you can start reading data).  
   
@@ -157,8 +166,9 @@ to build the missing bridge.exe in debug, which will fix the missing file.
   
 For debugging you can add the full path to the binary (`[...]/Datalink/target/release/Datalink`)
 to the Launch Option of the game you use for testing.  
-To get debug output you can cold start steam from the terminal, then the first stage will log into that terminal session
-(however the second stage will not, but is currently erroneously spawning a wine-terminal window).
+To get debug output you can cold start steam from the terminal, then the first stage will log into that terminal session.
+For debugging stage 2 use either `make debug-build` with `[...]/Datalink/target/debug/Datalink/`,
+or use `-D` flag as explained above.
 
 ## Related
 

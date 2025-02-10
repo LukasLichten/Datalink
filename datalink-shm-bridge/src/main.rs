@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use datalink_bridge_config::GameBridgeConfig;
 use mmap::FileMapping;
 

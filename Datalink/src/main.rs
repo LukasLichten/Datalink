@@ -5,8 +5,8 @@ mod dbus_handler;
 fn main() {
     let mut args = std::env::args();
 
-    let (exe, exec_override) = if let Some(exe) = handle_instructions(&mut args) {
-        exe
+    let (exe, exec_override, user_debug) = if let Some(args) = handle_instructions(&mut args) {
+        args
     } else {
         return;
     };
@@ -35,7 +35,7 @@ fn main() {
 
             is_proton = true;
 
-            if let Some((this_exec, bridge_exec)) = inject_bridge() {
+            if let Some((this_exec, bridge_exec)) = inject_bridge(user_debug) {
                 cmd.arg(bridge_exec);
 
                 cmd.arg(this_exec);
@@ -104,7 +104,7 @@ fn main() {
 /// The bridge will use our programm to handle dbus and other resources,
 /// so we will check if the parameter is an instruction, or an exec,
 /// and we hand the exec back for execution
-fn handle_instructions(args: &mut std::env::Args) -> Option<(String, Option<String>)> {
+fn handle_instructions(args: &mut std::env::Args) -> Option<(String, Option<String>, bool)> {
     if let Some(instr) = args.nth(1) {
         match instr.as_str() {
             "--help" => print_help(),
@@ -134,10 +134,13 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<(String, Option<Stri
 
                 dbus_handler::unset_playing(game)?;
             },
-            "--override" => return exec_override(args),
-            "-O" => return exec_override(args),
-            "-o" => return exec_override(args),
-            _ => return Some((instr, None))
+            "-D" => return handle_debug_flag(args),
+            "-d" => return handle_debug_flag(args),
+            "--debug" => return handle_debug_flag(args),
+            "--override" => return exec_override(args, false),
+            "-O" => return exec_override(args, false),
+            "-o" => return exec_override(args, false),
+            _ => return Some((instr, None, false))
         }
     } else {
         print_help();
@@ -146,26 +149,71 @@ fn handle_instructions(args: &mut std::env::Args) -> Option<(String, Option<Stri
     None
 }
 
-fn exec_override(args: &mut std::env::Args) -> Option<(String, Option<String>)> {
+fn check_if_debug_allowed() -> bool {
+    if cfg!(feature = "include-debug") {
+        true
+    } else {
+        println!("You enbaled debug but your packager did not include the debug exe. Please recompile with feature 'include-debug' enabled");
+        false
+    }
+}
+
+fn handle_debug_flag(args: &mut std::env::Args) -> Option<(String, Option<String>, bool)> {
+    let user_debug = check_if_debug_allowed();
+
+    let instr = args.next()?;
+
+    match instr.as_str() {
+        "--override" => exec_override(args, user_debug),
+        "-O" => exec_override(args, user_debug),
+        "-o" => exec_override(args, user_debug),
+        _ => Some((instr, None, user_debug))
+    }
+}
+
+fn exec_override(args: &mut std::env::Args, user_debug: bool) -> Option<(String, Option<String>, bool)> {
     let over = args.next()?;
     let instr = args.next()?;
 
-    Some((instr, Some(over)))
+    // late debug flag
+    let (user_debug, instr) = match instr.as_str() {
+        "--debug" => (check_if_debug_allowed(), args.next()?),
+        "-d" => (check_if_debug_allowed(), args.next()?),
+        "-D" => (check_if_debug_allowed(), args.next()?),
+        _ => (user_debug, instr)
+    };
+
+    Some((instr, Some(over), user_debug))
 }
 
 fn print_help() {
-    println!("Datalink is a command wrapper that notifies\n
-        when the wrapped programm is run and when it exits.\n
-        If the wrapped command is a Proton launch it will deploy a wrapper into the prefix,\n
-        which will also map the Windows Shared Memory Maps to /dev/shm.\n
-        \n
-        Standard usage is setting the Launch Option on Steam to:\n
-        Datalink %command% \n
-        \n
-        You can override the Program that should be used (launching a mod manager for example) using: \n
-        Datalink -O /full/path/to/exec %command% \n
-        -o, -O, --override are all valid \n
-        ");
+    let debugging_help = if cfg!(feature = "include-debug") {
+"
+If you run into issues (Memory Maps not deploying etc) then use the -d flag like this:
+Datalink -d %command%
+"        
+    } else {
+        ""
+    };
+
+    println!("Datalink is a command wrapper that notifies
+when the wrapped programm is run and when it exits.
+If the wrapped command is a Proton launch it will deploy a wrapper into the prefix,
+which will also map the Windows Shared Memory Maps to /dev/shm.
+https://github.com/LukasLichten/Datalink
+
+Standard usage is setting the Launch Option on Steam to:
+Datalink %command% 
+
+You can override the Program that should be used (launching a mod manager for example) using:
+Datalink -O /full/path/to/exec %command%
+-o, -O, --override are all valid
+{}
+Generally, if you want to modify the settings you can check within the prefix the folder:
+/drive_c/users/steamuser/AppData/Roaming/Datalink/
+Changing the file ending away from json will disable them, further instructions on editing can be found here:
+https://github.com/LukasLichten/Datalink?tab=readme-ov-file#configuring-the-bridge
+", debugging_help);
 }
 
 fn get_runningfile_path(game: &str) -> Option<PathBuf> {
@@ -197,18 +245,36 @@ fn get_cache_folder() -> Option<PathBuf> {
     Some(buff)
 }
 
-fn place_bridge_exe() -> Option<String> {
-    #[cfg(not(debug_assertions))]
-    let win_exec = include_bytes!("../../target/x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe");
-
-    #[cfg(debug_assertions)]
-    let win_exec = include_bytes!("../../target/x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe");
-
-
+fn place_bridge_exe(user_debug: bool) -> Option<String> {
     let mut path = get_cache_folder()?;
-    path.push("datalink-shm-bridge.exe");
 
-    if fs::write(path.as_path(), win_exec).is_err() {
+    let res = if user_debug {
+        path.push("datalink-shm-bridge-debug.exe");
+        let win_exec = {
+            // Build release, no debug feature. Case should not happen, but return release anyway
+            #[cfg(all(not(debug_assertions), not(feature = "include-debug")))]
+            { include_bytes!("../../target/x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe") }
+
+            // Build release with debug feature, or debug build. Return debug
+            #[cfg(any(debug_assertions, feature = "include-debug"))]
+            { include_bytes!("../../target/x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe") }
+        };
+        fs::write(path.as_path(), win_exec)
+    } else {
+        path.push("datalink-shm-bridge.exe");
+        let win_exec = {
+            // Build release, return release
+            #[cfg(not(debug_assertions))]
+            { include_bytes!("../../target/x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe") }
+
+            // Build debug, return debug
+            #[cfg(debug_assertions)]
+            { include_bytes!("../../target/x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe") }
+        };
+        fs::write(path.as_path(), win_exec)
+    };
+
+    if res.is_err() {
         // Failed to write the exe, but maybe there is already an exe we can use?
         if !path.exists() {
             // Nope, that failed too, aborting
@@ -223,9 +289,9 @@ fn place_bridge_exe() -> Option<String> {
     Some(path.to_str()?.to_string())
 }
 
-fn inject_bridge() -> Option<(String, String)> {
+fn inject_bridge(user_debug: bool) -> Option<(String, String)> {
     Some((
         std::env::current_exe().ok()?.canonicalize().ok()?.to_str()?.to_string(),
-        place_bridge_exe()?
+        place_bridge_exe(user_debug)?
     ))
 }
