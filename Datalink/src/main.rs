@@ -1,6 +1,9 @@
 use std::{fs, os::unix::process::CommandExt, path::PathBuf};
 
+use env_handler::do_env;
+
 mod dbus_handler;
+mod env_handler;
 
 fn main() {
     let mut args = std::env::args();
@@ -57,6 +60,16 @@ fn main() {
         } else {
             // regular append
             cmd.arg(item);
+        }
+    }
+
+    // Env variables
+    if let Err(err) = do_env(gameid.as_str()) {
+        println!("Datalink Failed to apply Env Variables: {}", err);
+        if user_debug {
+            panic!("Due to failure in debug mode exiting");
+        } else {
+            println!("Execution will continue in degraded state");
         }
     }
 
@@ -230,11 +243,15 @@ fn get_runningfile_path(game: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+const DATALINK_FOLDER_NAME: &str = "Datalink";
+
 /// This folder is ~/.cache/Datalink
+/// Used for storing the stage 2 .exe file and the running file (from the notification service)
+///
 /// If it doesn't exist we create it, if all that fails None is returned
-fn get_cache_folder() -> Option<PathBuf> {
+pub fn get_cache_folder() -> Option<PathBuf> {
     let mut buff = dirs::cache_dir()?;
-    buff.push("Datalink");
+    buff.push(DATALINK_FOLDER_NAME);
 
     if !buff.exists() {
         fs::create_dir(buff.as_path()).ok()?;
@@ -243,6 +260,25 @@ fn get_cache_folder() -> Option<PathBuf> {
     }
 
     Some(buff)
+}
+
+/// This folder is ~/.config/Datalink  
+/// Used for storing env varibles configs
+///
+/// If it doesn't exist we create it, if all that fails None is returned
+pub fn get_config_folder() -> Option<PathBuf> {
+    let mut folder = dirs::config_dir()?;
+
+
+    folder.push(DATALINK_FOLDER_NAME);
+
+    if !folder.exists() {
+        fs::create_dir(folder.as_path()).ok()?;
+    } else if !folder.is_dir() {
+        return None;
+    }
+
+    Some(folder)
 }
 
 fn place_bridge_exe(user_debug: bool) -> Option<String> {
