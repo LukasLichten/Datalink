@@ -1,12 +1,19 @@
 [package]
 name = "Datalink"
 version = "0.1.0"
+authors = ["Lukas 'DerGeneralFluff' Lichten"]
+license = "MIT"
+repository = "https://github.com/LukasLichten/Datalink"
+description = "Simple wrapper for Steam/Proton games to deploy memmaps etc"
 edition = "2021"
 build = "build.rs"
 
 [features]
 # This also includes the debug version of the datalink-shm-bridge, which spawns a terminal while running
 include-debug = []
+
+[build-dependencies]
+built = { version = "^0.7", features = ["git2"] }
 
 [dependencies]
 dirs = "^5.0"

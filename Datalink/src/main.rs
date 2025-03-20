@@ -5,6 +5,10 @@ use env_handler::do_env;
 mod dbus_handler;
 mod env_handler;
 
+mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 fn main() {
     let mut args = std::env::args();
 
@@ -166,7 +170,7 @@ fn check_if_debug_allowed() -> bool {
     if cfg!(feature = "include-debug") {
         true
     } else {
-        println!("You enbaled debug but your packager did not include the debug exe. Please recompile with feature 'include-debug' enabled");
+        println!("You enabled debug but your packager did not include the debug exe. Please recompile with feature 'include-debug' enabled");
         false
     }
 }
@@ -204,16 +208,29 @@ fn print_help() {
 "
 If you run into issues (Memory Maps not deploying etc) then use the -d flag like this:
 Datalink -d %command%
+Debug mode will also cause the game to fail to launch if any errors are detect in the env file.
 "        
     } else {
         ""
     };
 
-    println!("Datalink is a command wrapper that notifies
+    let git_info = if let (Some(hash),Some(dirty)) = (built_info::GIT_COMMIT_HASH_SHORT, built_info::GIT_DIRTY) {
+        format!(", commit {}{}", hash, if dirty { "/dirty" } else { "" })
+    } else {
+        String::new()
+    };
+
+    println!("
+Datalink version {}.{}.{}{git_info}
+Repository: {}
+
+Datalink is a command wrapper that notifies 
 when the wrapped programm is run and when it exits.
 If the wrapped command is a Proton launch it will deploy a wrapper into the prefix,
-which will also map the Windows Shared Memory Maps to /dev/shm.
-https://github.com/LukasLichten/Datalink
+which can map the Windows Shared Memory Maps to /dev/shm, override the game to be launched,
+and or launch other programms with the game. 
+Also it is possible to apply env variables to Proton/Native Game.
+All so there is less clutter in your game launch options.
 
 Standard usage is setting the Launch Option on Steam to:
 Datalink %command% 
@@ -221,12 +238,19 @@ Datalink %command%
 You can override the Program that should be used (launching a mod manager for example) using:
 Datalink -O /full/path/to/exec %command%
 -o, -O, --override are all valid
-{}
+{debugging_help}
 Generally, if you want to modify the settings you can check within the prefix the folder:
 /drive_c/users/steamuser/AppData/Roaming/Datalink/
 Changing the file ending away from json will disable them, further instructions on editing can be found here:
 https://github.com/LukasLichten/Datalink?tab=readme-ov-file#configuring-the-bridge
-", debugging_help);
+
+If you want to change/set env variables for Proton/Native Game, 
+you can do this via ~/.config/Datalink/[gameid]/env
+The folder will be automatically generated when launching the game with Datalink once (but not the file).
+Important: Gameid is Not subject to overrides within the prefix, so use the true steamid.
+Each line is one Variable, seperated with an = between key and value. 
+You can use // and # for comments (but only at the beginning of lines!).
+", built_info::PKG_VERSION_MAJOR, built_info::PKG_VERSION_MINOR, built_info::PKG_VERSION_PATCH, built_info::PKG_REPOSITORY);
 }
 
 fn get_runningfile_path(game: &str) -> Option<PathBuf> {

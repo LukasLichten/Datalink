@@ -2,6 +2,10 @@
 name = "datalink-shm-bridge"
 version = "0.1.0"
 edition = "2021"
+authors = ["Lukas 'DerGeneralFluff' Lichten"]
+license = "MIT"
+repository = "https://github.com/LukasLichten/Datalink"
+description = "Datalink's Wine bridge part (does the memory maps etc), only to be launched via Datalink"
 
 [build-dependencies]
 built = "0.7"

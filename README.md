@@ -1,5 +1,5 @@
 # Datalink
-Simple wrapper around Steam/Proton Games that can deploy a memorymap bridge and launch further application from a config file within the prefix
+Simple wrapper around Steam/Proton Games that can deploy a memorymap bridges and launch further application from a config file within the prefix
 
 ## Usage
 Apppend Datalink infront of the launch command (same way as Mangohud) by setting the Launch Options on Steam like this:
@@ -25,6 +25,34 @@ Datalink -D %command%
 This feature is set per default when building using `make` (`make build-full` explicitly), however downstream packagers may disable it.  
 You can use `Datalink --help` to view the help, if the feature is included then you will see a similar instruction on how to use it.
 If it isn't, then it is unfortunalty unavailble, at which point you may consider compiling manually.
+
+### Apply Env Variables
+Some cases you need to set some env variables to disabled/enable or tweak things within Proton/Native Game.  
+One noteable case is `SDL_JOYSTICK_DEVICE` (which forces sdl to enumerate the devices in a set order, 
+required in some racing games for them to destory button binds at random).  
+  
+To declutter the Steam Launch Options further Datalink supports applying any number of variables from an env housed here:  
+`~/.config/Datalink/[gameid]/env`  
+  
+The folder is generated automatically when the game is launched once, the file you have to create manually.  
+Each line is one variable, with the key and value seperated by and `=`.  
+Datalink supports comments with both `#` and `//`, but a comment has to be on it's own line 
+(if appended at the end of a variable it will be consider as part of the value)!
+
+Syntax errors will be logged (you may launch steam from a terminal to see the output), but if the `-D` flag is set (and supported),
+Datalink will halt on faulty configs (preventing the game launch).
+
+### Default Game Configs
+Datalink ships with Memory Map configs for the following titles:
+- Assetto Corsa
+- Assetto Corsa Competitzione
+- Assetto Corsa Evo (using same maps as AC/ACC, but seemingly unsupported)
+- Automobilista 2
+- Project Cars 2
+- rFactor 2 (same [rF2SharedMemoryMapPlugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin) as Windows required)
+- RaceRoom Racing Expierence
+- Euro Truck Simulator 2
+- American Truck Simulator
 
 ## Programmatical Usage
 For writing game tools this wrapper exposes resources (memory maps) and notifies when the game is launched (so you can start reading data).  
