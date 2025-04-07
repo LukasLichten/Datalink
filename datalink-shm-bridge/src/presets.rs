@@ -47,12 +47,12 @@ pub(super) fn get_preset(game: &str) -> Option<GameBridgeConfig> {
             MemMapConfig { name: "$rFactor2SMMP_Weather$".to_string(), size: 632 },
             MemMapConfig { name: "$rFactor2SMMP_Extended$".to_string(), size: 10152 },
         ], "rFactor 2"),
-        // SCSTelemetry 21619
+        // SCSTelemetry, yes the struct is 21619, but the memory map needs 32 * 1024 anyway
         "227300" => (vec![
-            MemMapConfig { name: "SCSTelemetry".to_string(), size: 21619 }
+            MemMapConfig { name: "SCSTelemetry".to_string(), size: 32 * 1024 }
         ], "Euro Truck Simulator 2"),
         "270880" => (vec![
-            MemMapConfig { name: "SCSTelemetry".to_string(), size: 21619 }
+            MemMapConfig { name: "SCSTelemetry".to_string(), size: 32 * 1024 }
         ], "American Truck Simulator"),
         "211500" => (vec![
             // $R3E 39320
