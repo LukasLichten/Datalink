@@ -315,8 +315,12 @@ fn place_bridge_exe(user_debug: bool) -> Option<String> {
             #[cfg(all(not(debug_assertions), not(feature = "include-debug")))]
             { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/release/datalink-shm-bridge.exe")) }
 
-            // Build release with debug feature, or debug build. Return debug
-            #[cfg(any(debug_assertions, feature = "include-debug"))]
+            // Build release with debug feature. Return release-include-console
+            #[cfg(all(not(debug_assertions), feature = "include-debug"))]
+            { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/release-include-console/datalink-shm-bridge.exe")) }
+            
+            // Build debug, return debug
+            #[cfg(debug_assertions)]
             { include_bytes!(concat!(env!("OUT_DIR"), "/../../../../x86_64-pc-windows-gnu/debug/datalink-shm-bridge.exe")) }
         };
         fs::write(path.as_path(), win_exec)

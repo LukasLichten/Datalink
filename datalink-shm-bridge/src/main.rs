@@ -1,5 +1,6 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(feature = "display-console"), windows_subsystem = "windows")]
 
+use std::time::Duration;
 use datalink_bridge_config::GameBridgeConfig;
 use mmap::FileMapping;
 
@@ -7,9 +8,16 @@ mod mmap;
 
 mod presets;
 
+mod process_detection;
+
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
+
+#[cfg(feature = "display-console")]
+const DELAY: Duration = Duration::from_secs(5);
+#[cfg(not(feature = "display-console"))]
+const DELAY: Duration = Duration::from_millis(500);
 
 fn main() {
     // Currently a shell is spawned for this tool being launched
@@ -135,7 +143,7 @@ fn main() {
     };
 
     // Generating game calle
-    let mut cmd = std::process::Command::new(game_exe);
+    let mut cmd = std::process::Command::new(game_exe.clone());
 
     for item in args {
         cmd.arg(item);
@@ -161,8 +169,9 @@ fn main() {
     // }).expect("Interrupt handler should never fail to be created");
     
     let _ = pro.wait();
-    
 
+    process_detection::poll_game(game_exe);
+    
     
     // Game closed, wrapping up
     println!("Datalink Bridge shutting down...");
@@ -199,7 +208,8 @@ fn main() {
     println!("Shutdown finished, window should close now");
 
 
-    // std::thread::sleep(std::time::Duration::from_secs(5));
+    // Small delay to make debugging easier
+    std::thread::sleep(DELAY);
 }
 
 fn convert_linux_path(drive_letter: char, path: String) -> String {
@@ -219,6 +229,8 @@ fn start_side_app(root: char, app: datalink_bridge_config::App) -> Result<std::p
     Ok(child)
 }
 
+const CLOSING_POLLING_RATE: Duration = Duration::from_millis(250);
+const CLOSING_POLLING_COUNT: usize = 20;
 
 /// Tries to close the children, but if one won't we try the others and return false to signal not
 /// complete (but likely sufficient cleanup)
@@ -246,7 +258,7 @@ fn close_apps(mut apps: Vec<std::process::Child>) -> bool {
 
 
     // Waiting for gracefull termination
-    for _ in 0..20 {
+    for _ in 0..CLOSING_POLLING_COUNT {
         if closed {
             return clean;
         }
@@ -264,7 +276,7 @@ fn close_apps(mut apps: Vec<std::process::Child>) -> bool {
             }
         }
 
-        if let Some(time) = std::time::Duration::from_millis(250).checked_sub(std::time::Instant::now() - start) {
+        if let Some(time) = CLOSING_POLLING_RATE.checked_sub(std::time::Instant::now() - start) {
             std::thread::sleep(time);
         }
     }
@@ -306,7 +318,7 @@ fn error_exit(msg: &str) -> ! {
     println!("Exiting...");
     
     // User read time
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    std::thread::sleep(DELAY);
 
     std::process::exit(1)
 }

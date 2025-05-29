@@ -7,16 +7,20 @@ license = "MIT"
 repository = "https://github.com/LukasLichten/Datalink"
 description = "Datalink's Wine bridge part (does the memory maps etc), only to be launched via Datalink"
 
+[features]
+display-console = []
+
 [build-dependencies]
 built = "0.7"
 
 [dependencies]
 datalink-bridge-config = { path = "../datalink-bridge-config" }
 # ctrlc = { version = "^3.4", features = ["termination"] }
-windows = { version = "^0.58", features = [
+windows = { version = "^0.58", default-features = false, features = [
    "Wdk_System_SystemServices",
    "Win32_Foundation",
    "Win32_Security",
    "Win32_Storage_FileSystem",
    "Win32_System_Memory",
 ]}
+sysinfo = { version = "0.35", default-features = false, features = ["system"] }

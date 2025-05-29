@@ -1,4 +1,20 @@
 [workspace]
 members = ["Datalink", "datalink-bridge-config","datalink-shm-bridge"]
 default-members = ["Datalink"]
-resolver = "2"
+resolver = "3"
+
+[profile.dev]
+opt-level = 2
+debug = false
+incremental = true
+overflow-checks = true
+
+[profile.release]
+strip = true
+opt-level = "s"
+lto = true
+incremental = false
+codegen-units = 1
+
+[profile.release-include-console]
+inherits = "release"

@@ -22,9 +22,11 @@ If build with the `include-debug` feature you can make use of the debug flag whi
 ```
 Datalink -D %command%
 ```
-This feature is set per default when building using `make` (`make build-full` explicitly), however downstream packagers may disable it.  
+This feature is set per default when building using `make build-full`, however downstream packagers may disable it (using `make build-release`).  
 You can use `Datalink --help` to view the help, if the feature is included then you will see a similar instruction on how to use it.
-If it isn't, then it is unfortunalty unavailble, at which point you may consider compiling manually.
+If it isn't, then it is unfortunalty unavailble, at which point you may consider compiling manually.  
+  
+When build with `make build-debug` the console is displayed always, ignoring this flag.
 
 ### Apply Env Variables
 Some cases you need to set some env variables to disabled/enable or tweak things within Proton/Native Game.  
@@ -51,8 +53,8 @@ Datalink ships with Memory Map configs for the following titles:
 - Project Cars 2
 - rFactor 2 (same [rF2SharedMemoryMapPlugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin) as Windows required)
 - RaceRoom Racing Expierence
-- Euro Truck Simulator 2
-- American Truck Simulator
+- Euro Truck Simulator 2 (requires [scs-sdk-plugin](https://github.com/RenCloud/scs-sdk-plugin))
+- American Truck Simulator (requires [scs-sdk-plugin](https://github.com/RenCloud/scs-sdk-plugin))
 
 ## Programmatical Usage
 For writing game tools this wrapper exposes resources (memory maps) and notifies when the game is launched (so you can start reading data).  
@@ -92,7 +94,7 @@ The config is on a per Proton Prefix basis, located in `C:\users\steamuser\AppDa
 (although username might be different if the prefix is configured differently).  
   
 You can use the, present in this repository, config crate `datalink-bridge-config`,
-which contains the structs and function for deserialzing the crate.  
+which contains the structs and function for deserialzing the configs.  
 Additionally with the `proton` feature you can use [proton-finder](https://github.com/LukasLichten/proton-finder)
 crate to automatically find the prefix for the game and with it the config file.  
   
@@ -103,7 +105,7 @@ This occures on basic rules:
 - if different game_id's are set, then all game_id's will be notified over the dbus
  - Including the default, if one or more config is unset/null
 - root_mount_point the first none Z value that is read is used, any missmatches will result in them being logged
- - Order Is NOT necesaarily alphabetic
+ - Order Is NOT necessarily alphabetic
  - Errors are only logged, but ignored
   
 To avoid conflict with other config files, it is best practice to set your config to a unique name, 
@@ -185,18 +187,12 @@ Project can be build via
 ```
 make
 ```
-  
-Your lsp might flag the `include_bytes` line, use
-```
-make debug-build
-```
-to build the missing bridge.exe in debug, which will fix the missing file.  
-  
-For debugging you can add the full path to the binary (`[...]/Datalink/target/release/Datalink`)
+
+For debugging you can add the full path to the binary (`[...]/Datalink/target/debug/Datalink`)
 to the Launch Option of the game you use for testing.  
 To get debug output you can cold start steam from the terminal, then the first stage will log into that terminal session.
-For debugging stage 2 use either `make debug-build` with `[...]/Datalink/target/debug/Datalink/`,
-or use `-D` flag as explained above.
+Currently `make` runs `make build-debug` which includes the debug console display for stage 2, 
+but if you want to debug with the release version you need to build with `make build-full` and use `-D` flag as explained above.
 
 ## Related
 
