@@ -126,14 +126,21 @@ In case of manual writing (e.g. other programming language), this is an example 
         {
           "path": "C:\\users\\steamuser\\Documents\\Little Navconnect\\littlenavconnect.exe",
           "args": []
+        },
+        {
+          "type": "Delete",
+          "file": "C:\\user\\steamuser\\AppData\\Local\\org.swift-project\\apps.json"
         }
     ],
-    "post_app": {
-        "path": "del",
-        "args": [
-            "C:\\users\\steamuser\\AppData\\Roaming\\running"
-        ]
-    },
+    "post_apps": [
+        {
+            "path": "/usr/bin/notify-send",
+            "args": [ 
+                "Game closing",
+                "I don't know about you, but your game has closed"
+            ]
+        }
+    ],
     "notes": "v1"
 }
 ```
@@ -141,12 +148,14 @@ All fields are optional (except for contained structs):
  - `game_id` changes the game reported over dbus (and debug console), omitting it or setting to null will use the value from steam. As shown, doesn't have to be a number, can be any valid string
  - `maps` has to be an array (or ommited), each map MUST contain a `name` (used by windows and then also in `/dev/shm`) and a `size`.  
  - `root_mount_point` optionally sets the letter ot override the default `Z:\` mount point that wine uses to mount in the linux filesystem (in case of an unusal wine prefix).
- - `apps` has to be and array (or ommitted), each app MUST contain a `path`
- (path to the executable, either an absolute linux or windows path (remember, json also uses `\` as escape character, so `\\` above is only one, and the correct way of doing it),
- or a relative path relative to the `AppData\Roaming\Datalink` folder) and an args array
- - `post_app` is a single app struct (as defined above), or null/omitted
+ - `apps` has to be and array (or ommitted) of app objects
+ - `post_apps` same as `apps`, however these are executed after the game has closed and the other apps were shut down
  - `notes` an additional field, should contain a string. Is not read by the bridge, and only used by you to for example note a version number for this config.
 
+App Objects are either:
+ - Apps, which MUST contain an `args` array (even if empty) and `path` (path to the executable, either an absolute linux or windows path (remember, json also uses `\` as escape character, so `\\` above is only one, and the correct way of doing it), or a relative path relative to the `AppData\Roaming\Datalink` folder)
+ - Actions, which contain the `type` and further paramaters based on their action:
+   - Delete requires a `file`, which will be similarly converted as executable path of apps. Delete only removes files and empty folders (errors if they have content), and simply does nothing if the file does not exist
 
 ### Game Status Notification
 Once the memory maps are setup the bridge will send out a signal over the dbus, and when the game closes another one.  

@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "display-console"), windows_subsystem = "windows")]
 
 use std::time::Duration;
-use datalink_bridge_config::GameBridgeConfig;
+use datalink_bridge_config::{AppContainer, GameBridgeConfig};
 use mmap::FileMapping;
 
 mod mmap;
@@ -35,7 +35,7 @@ fn main() {
     let game_exe = expect_exit(args.next(), "Missing argument, expected game executable");
     
     // Reading the config
-    let (callback, game_exe, game_id, maps, apps, post_app) = match datalink_bridge_config::read_config(presets::get_preset(game_id.as_str())) { // The LSP pretends the function does not exist
+    let (callback, game_exe, game_id, maps, apps, post_apps) = match datalink_bridge_config::read_config(presets::get_preset(game_id.as_str())) { // The LSP pretends the function does not exist
         (Some((config, alt)), err) => {
             let config: GameBridgeConfig = config; // We can at least code with this still
 
@@ -103,8 +103,9 @@ fn main() {
             let mut apps = Vec::<std::process::Child>::with_capacity(config.apps.len());
 
             for item in config.apps {
-                match start_side_app(root, item) {
-                    Ok(c) => apps.push(c),
+                match perform_side_app(root, item) {
+                    Ok(None) => (),
+                    Ok(Some(c)) => apps.push(c),
                     Err(e) => {
                         // Cleanup already created maps
                         drop(maps);
@@ -113,11 +114,15 @@ fn main() {
                         error_exit(e.as_str());
                     }
                 }
-
-
             }
 
-            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_names, maps, apps, config.post_app.map(|app| (app, root)))
+            let post_apps = if config.post_apps.is_empty() {
+                None
+            } else {
+                Some((config.post_apps, root))
+            };
+
+            (convert_linux_path(root, callback), convert_linux_path(root, game_exe), game_names, maps, apps, post_apps)
         },
         (None, Ok(())) => {
             println!("{} starting...", game_id.as_str());
@@ -187,22 +192,30 @@ fn main() {
     drop(maps); // Maps and their files are cleaned up on drop
 
     // Post App for cleanup purposes
-    if let Some((app,root)) = post_app {
-        match start_side_app(root, app) {
-            Ok(mut child) => {
-                if let Ok(Some(_)) = child.try_wait() {
-                    // Already exited, no need to wait
-                } else {
-                    // We give it one second execution time before termination
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                    let _ = close_apps(vec![child]);
+    if let Some((post_apps,root)) = post_apps {
+        println!("Running clean up apps");
+
+        let mut clean_the_cleaners = Vec::<std::process::Child>::with_capacity(post_apps.len());
+        for app in post_apps {
+            match perform_side_app(root, app) {
+                Ok(None) => (),
+                Ok(Some(mut child)) => {
+                    if let Ok(Some(_)) = child.try_wait() {
+                        // Already exited, no need to wait
+                    } else {
+                        clean_the_cleaners.push(child);
+                    }
+                },
+                Err(e) => {
+                    println!("Unable to run post app/action: {e}");
                 }
-            },
-            Err(e) => {
-                println!("Unable to run post run app: {e}");
-                std::thread::sleep(std::time::Duration::from_secs(3));
             }
         }
+
+        // We let them execute for 1s
+        std::thread::sleep(Duration::from_secs(1));
+
+        let _ = close_apps(clean_the_cleaners);
     }
 
     println!("Shutdown finished, window should close now");
@@ -216,6 +229,18 @@ fn convert_linux_path(drive_letter: char, path: String) -> String {
     // The LSP pretends the function does not exist
     // But it does under windows, for which we compile it
     datalink_bridge_config::convert_linux_path_to_wine(drive_letter, path)
+}
+
+fn perform_side_app(root: char, app: AppContainer) -> Result<Option<std::process::Child>, String> {
+    match app {
+        AppContainer::App(app) => start_side_app(root, app).map(|child| Some(child)),
+        AppContainer::Action(action) => {
+            match action.perform(root) {
+                Ok(()) => Ok(None),
+                Err(e) => Err(e.to_string())
+            }
+        }
+    }
 }
 
 /// Starts another app on the side

@@ -12,6 +12,7 @@ As multiple programms could want different configurations, the bridge reads all 
 This occures on basic rules: 
 - maps with the same name the larger is used
 - apps are merged if path and args match completly, otherwise it keeps both commands
+- post_apps are merged with the same rules as apps
 - if different game_id's are set, then all game_id's will be notified over the dbus
  - Including the default, if one or more config is unset/null
 - root_mount_point the first none Z value that is read is used, any missmatches will result in them being logged

@@ -1,5 +1,8 @@
 use std::{fs, path::PathBuf};
 
+#[cfg(target_os = "windows")]
+use std::str::FromStr;
+
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(test)]
@@ -47,10 +50,10 @@ pub struct GameBridgeConfig {
     pub maps: Vec<MemMapConfig>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub apps: Vec<App>,
+    pub apps: Vec<AppContainer>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_app: Option<App>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub post_apps: Vec<AppContainer>,
 
     // Useful to the individual programm to store the version for example
     // Allows them to update the version number if needed
@@ -79,7 +82,7 @@ where
 
 impl Default for GameBridgeConfig {
     fn default() -> Self {
-        Self { game_id: None, maps: Vec::default(), apps: Vec::default(), root_mount_point: DriveLetterWrapper::default(), post_app: None, notes: None }
+        Self { game_id: None, maps: Vec::default(), apps: Vec::default(), root_mount_point: DriveLetterWrapper::default(), post_apps: Vec::default(), notes: None }
     }
 }
 
@@ -103,7 +106,7 @@ impl GameBridgeConfig {
             }
         }
 
-        // Removing dublicate commands
+        // Removing dupplicate commands
         cached_names.clear();
         index = 0;
 
@@ -118,6 +121,20 @@ impl GameBridgeConfig {
             }
         }
 
+        // Removing dupplicate post commands
+        cached_names.clear();
+        index = 0;
+
+        while let Some(item) = self.post_apps.get(index) {
+            let rep = item.to_string();
+
+            if cached_names.contains(&rep) {
+                self.post_apps.remove(index);
+            } else {
+                cached_names.push(rep);
+                index += 1;
+            }
+        }
     }
 
 
@@ -144,7 +161,7 @@ impl GameBridgeConfig {
     }
 
     /// Sets additional programms to be launched
-    pub fn with_autolaunch_apps(mut self, apps: Vec<App>) -> Self {
+    pub fn with_autolaunch_apps(mut self, apps: Vec<AppContainer>) -> Self {
         self.apps = apps;
         self
     }
@@ -162,10 +179,10 @@ impl GameBridgeConfig {
         self.root_mount_point.0
     }
 
-    /// This adds an App/Command to run after the game exited and the apps closed.
+    /// This adds Apps/Commands to run after the game exited and the apps closed.
     /// Useful for cleanup purposes
-    pub fn with_post_run_app(mut self, app: App) -> Self {
-        self.post_app = Some(app);
+    pub fn with_post_run_apps(mut self, apps: Vec<AppContainer>) -> Self {
+        self.post_apps = apps;
         self
     }
 
@@ -270,6 +287,60 @@ impl MemMapConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AppContainer {
+    App(App),
+    Action(Action),
+}
+
+impl ToString for AppContainer {
+    fn to_string(&self) -> String {
+        match self {
+            Self::App(a) => a.to_string(),
+            Self::Action(Action::Delete { file }) => format!("DELETE {file}")
+        }
+    }
+}
+
+impl From<App> for AppContainer {
+    fn from(value: App) -> Self {
+        Self::App(value)
+    }
+}
+
+impl From<Action> for AppContainer {
+    fn from(value: Action) -> Self {
+        Self::Action(value)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn convert_path(drive_letter: char, path: &str) -> Option<String> {
+    let mut iter = path.chars();
+    let c = iter.next()?;
+    let next = iter.next();
+    
+
+    let path = if c.is_alphabetic() && next == Some(':') {
+        // Windows path, already formated
+        path.to_string()
+    } else if c == '/' {
+        // Linux path
+        convert_linux_path_to_wine(drive_letter, path.to_string())
+    } else {
+        // Relative path
+        let rel = path.replace("/", "\\");
+        
+        let mut path = get_config_folder_path()?;
+        path.push(rel);
+
+        path.to_str()?.to_string()
+    };
+
+    Some(path)
+}
+
 /// Defines an app to be launched with the game
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct App {
@@ -358,25 +429,7 @@ impl App {
 
     #[cfg(target_os = "windows")]
     pub fn get_command(self, drive_letter: char) -> Option<std::process::Command> {
-        let c = self.path.chars().next()?;
-
-        let path = if c.is_alphabetic() {
-            // Windows path, already formated
-            self.path
-        } else if c == '/' {
-            // Linux path
-            convert_linux_path_to_wine(drive_letter, self.path)
-        } else {
-            // Relative path
-            let rel = self.path.replace("/", "\\");
-            
-            let mut path = get_config_folder_path()?;
-            path.push(rel);
-
-            path.to_str()?.to_string()
-        };
-
-
+        let path = convert_path(drive_letter, self.path.as_str())?;
 
         let mut cmd = std::process::Command::new(path);
         cmd.args(self.args);
@@ -397,6 +450,35 @@ impl ToString for App {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "type")]
+pub enum Action {
+    Delete{ file: String }
+}
+
+impl Action {
+    #[cfg(target_os = "windows")]
+    pub fn perform(self, drive_letter: char) -> std::io::Result<()> {
+        match self {
+            Self::Delete { file } => {
+                let path = convert_path(drive_letter, file.as_str()).ok_or(std::io::Error::from(std::io::ErrorKind::InvalidData))?;
+
+                let f = PathBuf::from_str(path.as_str()).expect("Baddly formated string, but this is infallible, so it should not fail");
+                if f.is_file() {
+                    println!("Deleting file {}", path.as_str());
+                    fs::remove_file(f)?;
+                } else if f.is_dir() {
+                    println!("Deleting folder {}", path.as_str());
+                    fs::remove_dir(f)?;
+                } else {
+                    println!("No file at '{}', continuing", path.as_str());
+                }
+            }
+        }
+       
+        Ok(())
+    }
+}
 
 /// Converts a linux path to a path to a wine/windows path.  
 ///   
@@ -608,6 +690,8 @@ pub fn manual_read_configs_from_folder(folder: &PathBuf) -> (Option<(GameBridgeC
         old.apps.append(&mut read.apps);
 
         old.maps.append(&mut read.maps);
+
+        old.post_apps.append(&mut read.post_apps);
     }
 
     let dir = match folder.read_dir() {
