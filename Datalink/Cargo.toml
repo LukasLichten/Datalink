@@ -13,8 +13,8 @@ build = "build.rs"
 include-debug = []
 
 [build-dependencies]
-built = { version = "^0.7", features = ["git2"] }
+built = { version = "^0.8", features = ["git2"] }
 
 [dependencies]
-dirs = "^5.0"
+dirs = "^6.0"
 dbus = "^0.9"
