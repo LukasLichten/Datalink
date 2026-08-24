@@ -64,6 +64,10 @@ pub(super) fn get_preset(game: &str) -> Option<GameBridgeConfig> {
             // $R3E 39320
             MemMapConfig { name: "$R3E".to_string(), size: 39320 }
         ], "RaceRoom Racing Expierence"),
+        // Le Mans Ultimate ("2399420") deliberately has NO preset:
+        // pre-creating its native LMU_Data mapping (324820 bytes) makes the game abort on
+        // startup with [ELS] Fatal Error 11, before EAC login. Verified against LMU 1.4130.
+        // Use TheIronWolf's rF2 plugin (Wine fork) for LMU telemetry instead.
         _ => return None
     };
 

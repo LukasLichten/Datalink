@@ -8,6 +8,29 @@ use sysinfo::{self, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKi
 
 const POLL_RATE: Duration = Duration::from_secs(5);
 
+/// Checks if this exe is located within the game folder.
+/// Wine can mount the same linux location under multiple drive letters
+/// (Proton mounts steam libraries as S: etc.) and reports process exes under the most
+/// specific drive, so the exe path is resolved back to its linux path first and compared
+/// against the linux game folder — exact, regardless of which drive the path passed through.
+fn is_within_game_folder(exe: &Path, folder: &Path) -> bool {
+    let Some(exe) = exe.to_str() else {
+        return false;
+    };
+    let Some(unix) = datalink_bridge_config::convert_wine_path_to_linux(exe) else {
+        return false;
+    };
+
+    // Canonicalize both sides: the launcher may have been handed the library through a
+    // symlink (~/.steam/steam vs ~/.local/share/Steam) while wine resolves the on-disk path
+    match (std::fs::canonicalize(unix), std::fs::canonicalize(folder)) {
+        (Ok(e), Ok(f)) => e.starts_with(f),
+        _ => false,
+    }
+}
+
+/// game_exe is the linux path of the game executable (as passed to the bridge),
+/// NOT the converted wine path
 pub fn poll_game(game_exe: String) -> Option<()> {
     println!("The initial Process of the game has closed, falling back to polling...");
 
@@ -47,7 +70,7 @@ fn check_for_program_running(system: &mut System, pid: Option<Pid>, folder: &Pat
 
         if let Some(pro) = system.process(*pid) {
             if let Some(path) = pro.exe() {
-                if path.starts_with(folder) && pro.exists() {
+                if is_within_game_folder(path, folder) && pro.exists() {
                     return Some(pro.pid());
                 }
             }
@@ -71,7 +94,7 @@ fn check_for_program_running(system: &mut System, pid: Option<Pid>, folder: &Pat
 
         if let Some(pro) = system.processes().values().find(|val| {
             if let Some(path) = val.exe() {
-                path.starts_with(folder)
+                is_within_game_folder(path, folder)
             } else {
                 false
             }
