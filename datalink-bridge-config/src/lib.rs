@@ -480,17 +480,78 @@ impl Action {
     }
 }
 
-/// Converts a linux path to a path to a wine/windows path.  
-///   
-/// This is done by converting the slashes and adding appropriate drive letter.  
-///
-/// Default letter is usually Z
+/// Converts a linux path to a wine/windows path by swapping slashes and prefixing the
+/// drive letter (usually Z).
 #[cfg(target_os = "windows")]
 pub fn convert_linux_path_to_wine(drive_letter: char, path: String) -> String {
     let p = path.replace('/', "\\");
-    let complete = format!("{}:", drive_letter.to_ascii_uppercase()) + &p;
+    format!("{}:{}", drive_letter.to_ascii_uppercase(), p)
+}
 
-    complete
+/// Resolves a wine path back to linux via Wine's drive mapping, so paths through different
+/// drive letters (Z: root vs Proton's per-library drive) compare exactly. None on plain Windows.
+#[cfg(target_os = "windows")]
+pub fn convert_wine_path_to_linux(path: &str) -> Option<String> {
+    wine_path::dos_to_unix(path)
+}
+
+/// FFI to Wine's kernel32-exported path mapping (as used by `winepath`). Resolved
+/// dynamically; on plain Windows the export is absent and the fn returns None.
+#[cfg(target_os = "windows")]
+mod wine_path {
+    use std::ffi::{c_char, c_void, CString};
+    use std::sync::OnceLock;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleA(name: *const c_char) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+        fn GetProcessHeap() -> *mut c_void;
+        fn HeapFree(heap: *mut c_void, flags: u32, mem: *mut c_void) -> i32;
+    }
+
+    // Wine's __cdecl == extern "system" on the single-ABI x86_64-pc-windows-gnu target.
+    // char* wine_get_unix_file_name(LPCWSTR dos_path)
+    type DosToUnix = unsafe extern "system" fn(*const u16) -> *mut c_char;
+
+    fn get_export(name: &str) -> usize {
+        let kernel32 = CString::new("kernel32.dll").expect("static str is nul-free");
+        let name = CString::new(name).expect("static str is nul-free");
+        unsafe {
+            let module = GetModuleHandleA(kernel32.as_ptr());
+            if module.is_null() {
+                return 0;
+            }
+            GetProcAddress(module, name.as_ptr()) as usize
+        }
+    }
+
+    fn heap_free(ptr: *mut c_void) {
+        unsafe {
+            HeapFree(GetProcessHeap(), 0, ptr);
+        }
+    }
+
+    pub fn dos_to_unix(dos_path: &str) -> Option<String> {
+        static FUNC: OnceLock<usize> = OnceLock::new();
+        let func = *FUNC.get_or_init(|| get_export("wine_get_unix_file_name"));
+        if func == 0 {
+            return None;
+        }
+        let func: DosToUnix = unsafe { std::mem::transmute(func) };
+
+        let wide: Vec<u16> = dos_path.encode_utf16().chain(std::iter::once(0)).collect();
+        let ptr = unsafe { func(wide.as_ptr()) };
+        if ptr.is_null() {
+            return None;
+        }
+
+        // Reject non-UTF-8 wine output rather than comparing a corrupted path
+        let bytes = unsafe { std::ffi::CStr::from_ptr(ptr) }.to_bytes().to_vec();
+        heap_free(ptr as *mut c_void);
+
+        String::from_utf8(bytes).ok()
+    }
 }
 
     

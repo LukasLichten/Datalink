@@ -8,6 +8,25 @@ use sysinfo::{self, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKi
 
 const POLL_RATE: Duration = Duration::from_secs(5);
 
+/// Whether `exe` lives inside `folder`. Wine reports process exes through the most specific
+/// drive (Proton mounts each library as its own letter, e.g. S:), so resolve the exe back to
+/// linux before comparing — exact regardless of which drive it came through.
+fn is_within_game_folder(exe: &Path, folder: &Path) -> bool {
+    let Some(exe) = exe.to_str() else {
+        return false;
+    };
+    let Some(unix) = datalink_bridge_config::convert_wine_path_to_linux(exe) else {
+        return false;
+    };
+
+    // Canonicalize both: the library may be reached through a symlink (e.g. ~/.steam/steam)
+    match (std::fs::canonicalize(unix), std::fs::canonicalize(folder)) {
+        (Ok(e), Ok(f)) => e.starts_with(f),
+        _ => false,
+    }
+}
+
+/// `game_exe` is the linux path passed to the bridge, not the converted wine path.
 pub fn poll_game(game_exe: String) -> Option<()> {
     println!("The initial Process of the game has closed, falling back to polling...");
 
@@ -47,7 +66,7 @@ fn check_for_program_running(system: &mut System, pid: Option<Pid>, folder: &Pat
 
         if let Some(pro) = system.process(*pid) {
             if let Some(path) = pro.exe() {
-                if path.starts_with(folder) && pro.exists() {
+                if is_within_game_folder(path, folder) && pro.exists() {
                     return Some(pro.pid());
                 }
             }
@@ -71,14 +90,20 @@ fn check_for_program_running(system: &mut System, pid: Option<Pid>, folder: &Pat
 
         if let Some(pro) = system.processes().values().find(|val| {
             if let Some(path) = val.exe() {
-                path.starts_with(folder)
+                is_within_game_folder(path, folder)
             } else {
                 false
             }
         }) {
+            // Log each newly found process — helps debug handoffs (e.g. AMS2.exe -> AMS2AVX.exe)
+            println!(
+                "Found game process: {} (pid {})",
+                pro.exe().and_then(|p| p.to_str()).unwrap_or("<unknown>"),
+                pro.pid()
+            );
             return Some(pro.pid());
         }
     }
-    
+
     None
 }

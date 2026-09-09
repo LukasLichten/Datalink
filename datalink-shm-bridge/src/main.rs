@@ -33,7 +33,11 @@ fn main() {
     let game_id = expect_exit(args.next(), "Missing argument, expected game_id");
 
     let game_exe = expect_exit(args.next(), "Missing argument, expected game executable");
-    
+
+    // `game_exe` is shadowed below with the converted wine path; poll_game needs the linux
+    // form, so keep it here.
+    let game_exe_linux = game_exe.clone();
+
     // Reading the config
     let (callback, game_exe, game_id, maps, apps, post_apps) = match datalink_bridge_config::read_config(presets::get_preset(game_id.as_str())) { // The LSP pretends the function does not exist
         (Some((config, alt)), err) => {
@@ -161,6 +165,7 @@ fn main() {
 
 
     // Launching the game
+    println!("Launching game: {game_exe}");
     println!("DO NOT CLOSE THIS WINDOW!");
     let mut pro = match cmd.spawn() {
         Ok(pro) => pro,
@@ -175,7 +180,7 @@ fn main() {
     
     let _ = pro.wait();
 
-    process_detection::poll_game(game_exe);
+    process_detection::poll_game(game_exe_linux);
     
     
     // Game closed, wrapping up
