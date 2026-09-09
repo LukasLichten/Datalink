@@ -34,7 +34,8 @@ fn main() {
 
     let game_exe = expect_exit(args.next(), "Missing argument, expected game executable");
 
-    // Process polling resolves exe paths back to linux form, so it compares against this
+    // `game_exe` is shadowed below with the converted wine path; poll_game needs the linux
+    // form, so keep it here.
     let game_exe_linux = game_exe.clone();
 
     // Reading the config
